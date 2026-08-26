@@ -36,58 +36,40 @@ begin
     raise exception 'winner and loser must be different players';
   end if;
 
-  if p_station_id is null then
-    insert into public.arena_matches (
-      player_one_id,
-      player_two_id,
-      station_id,
-      challenge,
-      reward_tokens,
-      winner_player_id,
-      loser_player_id,
-      resolved_at
-    )
-    values (
-      p_player_one_id,
-      p_player_two_id,
-      p_station_id,
-      p_challenge,
-      p_reward_tokens,
-      p_winner_player_id,
-      p_loser_player_id,
-      now()
-    )
-    returning id into v_match_id;
-  else
-    insert into public.arena_matches (
-      player_one_id,
-      player_two_id,
-      station_id,
-      challenge,
-      reward_tokens,
-      winner_player_id,
-      loser_player_id,
-      resolved_at
-    )
-    values (
-      p_player_one_id,
-      p_player_two_id,
-      p_station_id,
-      p_challenge,
-      p_reward_tokens,
-      p_winner_player_id,
-      p_loser_player_id,
-      now()
-    )
-    on conflict (player_one_id, station_id)
-      where station_id is not null
-      do nothing
-    returning id into v_match_id;
+  if p_station_id is not null then
+    select id
+      into v_match_id
+      from public.arena_matches
+      where player_one_id = p_player_one_id
+        and station_id = p_station_id
+      limit 1;
+
+    if v_match_id is not null then
+      return jsonb_build_object('awarded', false, 'match_id', v_match_id);
+    end if;
   end if;
 
-  if v_match_id is null then
-    return jsonb_build_object('awarded', false);
-  end if;
+  insert into public.arena_matches (
+    player_one_id,
+    player_two_id,
+    station_id,
+    challenge,
+    reward_tokens,
+    winner_player_id,
+    loser_player_id,
+    resolved_at
+  )
+  values (
+    p_player_one_id,
+    p_player_two_id,
+    p_station_id,
+    p_challenge,
+    p_reward_tokens,
+    p_winner_player_id,
+    p_loser_player_id,
+    now()
+  )
+  returning id into v_match_id;
 
   update public.profiles
     set tokens = tokens + p_reward_tokens,

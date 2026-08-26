@@ -280,8 +280,7 @@ export async function resolveArenaMatchRemotely(
     p_reward_tokens: rewardTokens,
   });
 
-  if (!isMissingRpcError(rpc.error)) {
-    if (rpc.error) throw new Error(rpc.error.message);
+  if (!rpc.error) {
     if (isAwardResult(rpc.data) && rpc.data.awarded === false) return false;
     return true;
   }
@@ -448,5 +447,13 @@ function isAwardResult(value: unknown): value is { awarded: boolean } {
 function isSchemaMismatchError(error: { message?: string; code?: string } | null): boolean {
   if (!error) return false;
   const message = error.message?.toLowerCase() ?? "";
-  return error.code === "PGRST204" || message.includes("station_id") || message.includes("loser_player_id") || message.includes("resolved_at");
+  return (
+    error.code === "PGRST204" ||
+    error.code === "42P10" ||
+    message.includes("station_id") ||
+    message.includes("loser_player_id") ||
+    message.includes("resolved_at") ||
+    message.includes("on conflict") ||
+    message.includes("unique or exclusion constraint")
+  );
 }
