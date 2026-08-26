@@ -18,3 +18,4 @@ La clave `service_role` nunca debe añadirse al navegador ni a variables
 npm install
 npm run dev
 ```
+# Liga-pokemon
