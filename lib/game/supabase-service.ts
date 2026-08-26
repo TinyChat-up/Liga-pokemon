@@ -282,6 +282,7 @@ export async function resolveArenaMatchRemotely(
 
   if (!isMissingRpcError(rpc.error)) {
     if (rpc.error) throw new Error(rpc.error.message);
+    if (isAwardResult(rpc.data) && rpc.data.awarded === false) return false;
     return true;
   }
 
@@ -304,8 +305,24 @@ export async function resolveArenaMatchRemotely(
         .maybeSingle()
     : await client.from("arena_matches").insert(payload).select("id").maybeSingle();
 
-  if (matchResult.error) throw new Error(matchResult.error.message);
-  if (!matchResult.data) return false;
+  if (matchResult.error) {
+    if (!isSchemaMismatchError(matchResult.error)) throw new Error(matchResult.error.message);
+    const legacyResult = await client
+      .from("arena_matches")
+      .insert({
+        player_one_id: playerOne.dbId,
+        player_two_id: playerTwo.dbId,
+        challenge,
+        reward_tokens: rewardTokens,
+        winner_player_id: winner.dbId,
+      })
+      .select("id")
+      .maybeSingle();
+    if (legacyResult.error) throw new Error(legacyResult.error.message);
+    if (!legacyResult.data) return false;
+  } else if (!matchResult.data) {
+    return false;
+  }
 
   const [{ error: winnerError }, { error: loserError }] = await Promise.all([
     client
@@ -426,4 +443,10 @@ function isMissingRpcError(error: { message?: string; code?: string } | null): b
 
 function isAwardResult(value: unknown): value is { awarded: boolean } {
   return Boolean(value && typeof value === "object" && "awarded" in value);
+}
+
+function isSchemaMismatchError(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false;
+  const message = error.message?.toLowerCase() ?? "";
+  return error.code === "PGRST204" || message.includes("station_id") || message.includes("loser_player_id") || message.includes("resolved_at");
 }
