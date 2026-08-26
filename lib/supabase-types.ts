@@ -109,22 +109,31 @@ export type Database = {
           id: string;
           player_one_id: string;
           player_two_id: string;
+          station_id: string | null;
           challenge: string;
           reward_tokens: number;
           winner_player_id: string | null;
+          loser_player_id: string | null;
           created_at: string | null;
+          resolved_at: string | null;
         };
         Insert: {
           id?: string;
           player_one_id: string;
           player_two_id: string;
+          station_id?: string | null;
           challenge: string;
           reward_tokens: number;
           winner_player_id?: string | null;
+          loser_player_id?: string | null;
           created_at?: string | null;
+          resolved_at?: string | null;
         };
         Update: {
+          station_id?: string | null;
           winner_player_id?: string | null;
+          loser_player_id?: string | null;
+          resolved_at?: string | null;
         };
         Relationships: [];
       };
@@ -152,6 +161,8 @@ export type Database = {
           player_id: string;
           station_id: string;
           question_key: string;
+          selected_answer: number | null;
+          is_correct: boolean | null;
           created_at: string | null;
         };
         Insert: {
@@ -159,9 +170,14 @@ export type Database = {
           player_id: string;
           station_id: string;
           question_key: string;
+          selected_answer?: number | null;
+          is_correct?: boolean | null;
           created_at?: string | null;
         };
-        Update: Record<string, never>;
+        Update: {
+          selected_answer?: number | null;
+          is_correct?: boolean | null;
+        };
         Relationships: [];
       };
     };
@@ -194,6 +210,18 @@ export type Database = {
           p_player_id: string;
           p_item_name: string;
           p_token_cost: number;
+        };
+        Returns: Json;
+      };
+      resolve_arena_match: {
+        Args: {
+          p_player_one_id: string;
+          p_player_two_id: string;
+          p_station_id: string | null;
+          p_challenge: string;
+          p_winner_player_id: string;
+          p_loser_player_id: string;
+          p_reward_tokens: number;
         };
         Returns: Json;
       };

@@ -1,28 +1,18 @@
-import type { Player, Question } from "./types";
+import type { Question } from "./types";
 
 export function questionKey(question: Question): string {
-  const promptPart = question.prompt
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 48);
-
-  return `${question.tier}:${question.label}:${promptPart}`;
+  return question.id;
 }
 
-export function selectQuestionForPlayer(
+export function getNextQuestion(
   questions: Question[],
-  tier: number,
-  player: Player,
+  usedQuestionIds: string[],
 ): Question | null {
-  const tierQuestions = questions.filter((item) => item.tier === tier);
-  if (!tierQuestions.length) return null;
+  if (!questions.length) return null;
 
-  const seen = new Set(player.questionHistory ?? []);
-  const unseen = tierQuestions.filter((item) => !seen.has(questionKey(item)));
-  const pool = unseen.length ? unseen : tierQuestions;
+  const seen = new Set(usedQuestionIds);
+  const pool = questions.filter((item) => !seen.has(item.id));
+  if (!pool.length) return null;
 
   return pool[Math.floor(Math.random() * pool.length)] ?? null;
 }

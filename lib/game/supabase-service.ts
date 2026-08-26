@@ -1,7 +1,7 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultPlayers } from "./data";
-import type { Capture, Evolution, Player } from "./types";
+import type { ArenaMatchSummary, Capture, Evolution, Player, RedemptionSummary } from "./types";
 import type { Database } from "../supabase-types";
 
 type Client = SupabaseClient<Database>;
@@ -14,15 +14,23 @@ type GameSnapshot = {
 export async function loadGameSnapshot(client: Client | null): Promise<GameSnapshot> {
   if (!client) return { players: defaultPlayers, mode: "local" };
 
-  const [profilesResult, progressResult, capturesResult] = await Promise.all([
+  const [profilesResult, progressResult, capturesResult, arenaResult, redemptionsResult] = await Promise.all([
     client.from("profiles").select("*"),
     client.from("game_progress").select("player_id,station_id"),
     client.from("captures").select("*").is("redeemed_at", null),
+    client.from("arena_matches").select("*"),
+    client.from("redemptions").select("*"),
   ]);
   const questionHistoryResult = await client.from("question_history").select("player_id,question_key");
 
   if (profilesResult.error) {
     throw new Error(profilesResult.error.message);
+  }
+  if (arenaResult.error) {
+    throw new Error(arenaResult.error.message);
+  }
+  if (redemptionsResult.error) {
+    throw new Error(redemptionsResult.error.message);
   }
   if (questionHistoryResult.error) {
     throw new Error(questionHistoryResult.error.message);
@@ -30,6 +38,8 @@ export async function loadGameSnapshot(client: Client | null): Promise<GameSnaps
 
   const progress = progressResult.data ?? [];
   const captures = capturesResult.data ?? [];
+  const arenaMatches = arenaResult.data ?? [];
+  const redemptions = redemptionsResult.data ?? [];
   const questionHistory = questionHistoryResult.data ?? [];
   const remotePlayers = (profilesResult.data ?? []).map<Player>((row) => ({
     id: row.player_code,
@@ -51,7 +61,31 @@ export async function loadGameSnapshot(client: Client | null): Promise<GameSnaps
         sprite: item.sprite_id,
         value: item.token_value,
       })),
-    arenaEvents: [],
+    arenaEvents: unique(
+      arenaMatches
+        .filter((item) => item.player_one_id === row.id && item.station_id)
+        .map((item) => item.station_id!)
+    ),
+    arenaHistory: arenaMatches
+      .filter((item) => item.player_one_id === row.id || item.player_two_id === row.id)
+      .map<ArenaMatchSummary>((item) => ({
+        id: item.id,
+        stationId: item.station_id ?? undefined,
+        opponentId: item.player_one_id === row.id ? item.player_two_id : item.player_one_id,
+        challenge: item.challenge,
+        winnerId: item.winner_player_id ?? undefined,
+        loserId: item.loser_player_id ?? undefined,
+        rewardTokens: item.reward_tokens,
+        createdAt: item.created_at,
+      })),
+    redemptions: redemptions
+      .filter((item) => item.player_id === row.id)
+      .map<RedemptionSummary>((item) => ({
+        id: item.id,
+        itemName: item.item_name,
+        tokenCost: item.token_cost,
+        createdAt: item.created_at,
+      })),
     questionHistory: unique(
       questionHistory.filter((item) => item.player_id === row.id).map((item) => item.question_key),
     ),
@@ -86,8 +120,8 @@ export async function recordQuestionShown(
   player: Player,
   stationId: string,
   key: string,
-): Promise<void> {
-  if (!client || !player.dbId) return;
+): Promise<boolean> {
+  if (!client || !player.dbId) return true;
 
   const { error } = await client.from("question_history").insert({
     player_id: player.dbId,
@@ -98,6 +132,30 @@ export async function recordQuestionShown(
   if (error && error.code !== "23505") {
     throw new Error(error.message);
   }
+
+  if (error?.code === "23505") return false;
+  return true;
+}
+
+export async function recordQuestionAnswer(
+  client: Client | null,
+  player: Player,
+  key: string,
+  selectedAnswer: number,
+  isCorrect: boolean,
+): Promise<void> {
+  if (!client || !player.dbId) return;
+
+  const { error } = await client
+    .from("question_history")
+    .update({
+      selected_answer: selectedAnswer,
+      is_correct: isCorrect,
+    })
+    .eq("player_id", player.dbId)
+    .eq("question_key", key);
+
+  if (error) throw new Error(error.message);
 }
 
 export async function completeStationRemotely(
@@ -181,6 +239,7 @@ export async function redeemCaptureRemotely(
   const rpc = await client.rpc("redeem_capture_for_tokens", { p_capture_id: capture.recordId });
   if (!isMissingRpcError(rpc.error)) {
     if (rpc.error) throw new Error(rpc.error.message);
+    if (isAwardResult(rpc.data) && rpc.data.awarded === false) return false;
     return true;
   }
 
@@ -199,22 +258,69 @@ export async function redeemCaptureRemotely(
   return true;
 }
 
-export async function createArenaMatch(
+export async function resolveArenaMatchRemotely(
   client: Client | null,
-  playerOneId: string | undefined,
-  playerTwoId: string | undefined,
+  playerOne: Player,
+  playerTwo: Player,
+  stationId: string | null,
   challenge: string,
-): Promise<void> {
-  if (!client || !playerOneId || !playerTwoId) return;
+  winner: Player,
+  loser: Player,
+  rewardTokens: number,
+): Promise<boolean> {
+  if (!client || !playerOne.dbId || !playerTwo.dbId || !winner.dbId || !loser.dbId) return true;
 
-  const { error } = await client.from("arena_matches").insert({
-    player_one_id: playerOneId,
-    player_two_id: playerTwoId,
-    challenge,
-    reward_tokens: 2,
+  const rpc = await client.rpc("resolve_arena_match", {
+    p_player_one_id: playerOne.dbId,
+    p_player_two_id: playerTwo.dbId,
+    p_station_id: stationId,
+    p_challenge: challenge,
+    p_winner_player_id: winner.dbId,
+    p_loser_player_id: loser.dbId,
+    p_reward_tokens: rewardTokens,
   });
 
-  if (error) throw new Error(error.message);
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    return true;
+  }
+
+  const payload = {
+    player_one_id: playerOne.dbId,
+    player_two_id: playerTwo.dbId,
+    station_id: stationId,
+    challenge,
+    reward_tokens: rewardTokens,
+    winner_player_id: winner.dbId,
+    loser_player_id: loser.dbId,
+    resolved_at: new Date().toISOString(),
+  };
+
+  const matchResult = stationId
+    ? await client
+        .from("arena_matches")
+        .upsert(payload, { onConflict: "player_one_id,station_id", ignoreDuplicates: true })
+        .select("id")
+        .maybeSingle()
+    : await client.from("arena_matches").insert(payload).select("id").maybeSingle();
+
+  if (matchResult.error) throw new Error(matchResult.error.message);
+  if (!matchResult.data) return false;
+
+  const [{ error: winnerError }, { error: loserError }] = await Promise.all([
+    client
+      .from("profiles")
+      .update({ tokens: winner.tokens + rewardTokens, updated_at: new Date().toISOString() })
+      .eq("id", winner.dbId),
+    client
+      .from("profiles")
+      .update({ energy: 0, updated_at: new Date().toISOString() })
+      .eq("id", loser.dbId),
+  ]);
+
+  if (winnerError) throw new Error(winnerError.message);
+  if (loserError) throw new Error(loserError.message);
+  return true;
 }
 
 export async function createTeamInvite(
@@ -316,4 +422,8 @@ function unique(values: string[]): string[] {
 function isMissingRpcError(error: { message?: string; code?: string } | null): boolean {
   if (!error) return false;
   return error.code === "PGRST202" || Boolean(error.message?.toLowerCase().includes("could not find the function"));
+}
+
+function isAwardResult(value: unknown): value is { awarded: boolean } {
+  return Boolean(value && typeof value === "object" && "awarded" in value);
 }

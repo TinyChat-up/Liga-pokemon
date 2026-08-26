@@ -1,5 +1,6 @@
-import type { Capture, Eeveelution, MenuItem, Player, Question, Station } from "./types";
+import type { Capture, Eeveelution, MenuItem, Player, Station } from "./types";
 import { REWARDS } from "./rules";
+export { QUESTION_BANK as questions } from "./question-bank";
 
 export const playerNames = [
   "Eduardo",
@@ -88,21 +89,6 @@ export const eeveelutions: Eeveelution[] = [
   { name: "Sylveon", type: "Hada", perk: "Ventaja especial en Team Rocket", image: "700" },
 ];
 
-export const questions: Question[] = [
-  { tier: 1, prompt: "¿Qué número falta? 3 · 8 · 15 · 24 · ?", options: ["32", "33", "35", "37"], answer: 2, label: "Golpe patrón" },
-  { tier: 1, prompt: "Todos los flanes son postres. Algunos postres son fríos. ¿Qué podemos asegurar?", options: ["Todos los flanes son fríos", "Algunos flanes son fríos", "Los flanes son postres", "Nada"], answer: 2, label: "Lectura precisa" },
-  { tier: 1, prompt: "En el código César, retroceder 3 letras convierte 'FDVD' en…", options: ["CASA", "CAMA", "DADA", "BABA"], answer: 0, label: "Descifrado" },
-  { tier: 2, prompt: "Un reloj marca las 15:15. ¿Qué ángulo menor forman sus agujas?", options: ["0°", "7,5°", "15°", "30°"], answer: 1, label: "Cálculo fino" },
-  { tier: 2, prompt: "Ana llega antes que Bruno. Bruno antes que Carla. Diego llega antes que Ana. ¿Quién llega primero?", options: ["Ana", "Bruno", "Carla", "Diego"], answer: 3, label: "Ruta lógica" },
-  { tier: 2, prompt: "Tienes 8 bolas idénticas; una pesa más. Con una balanza, ¿cuántas pesadas bastan como mínimo?", options: ["1", "2", "3", "4"], answer: 1, label: "Estrategia" },
-  { tier: 3, prompt: "Hay tres cajas: 'rojas', 'azules' y 'mezcladas'. Todas las etiquetas son falsas. Sacas una ficha de una caja. ¿De cuál debes sacar para deducirlo todo?", options: ["Rojas", "Azules", "Mezcladas", "Da igual"], answer: 2, label: "Deducción" },
-  { tier: 3, prompt: "Un padre tiene cuatro hijas; cada hija tiene un hermano. ¿Cuántos hijos tiene en total?", options: ["4", "5", "8", "9"], answer: 1, label: "Trampa limpia" },
-  { tier: 3, prompt: "Dos cuerdas tardan una hora en consumirse, de manera irregular. ¿Cómo mides 45 minutos?", options: ["Cortando una en cuatro", "Encendiendo ambas por un extremo", "Una por ambos extremos y la otra por un extremo; al acabar la primera, enciendes el otro extremo de la segunda", "No se puede"], answer: 2, label: "Plan maestro" },
-  { tier: 4, prompt: "Solo una afirmación es cierta. A: 'B miente'. B: 'C miente'. C: 'A y B mienten'. ¿Quién dice la verdad?", options: ["A", "B", "C", "Nadie"], answer: 1, label: "Lógica élite" },
-  { tier: 4, prompt: "En ajedrez, si tu rey está en jaque, ¿cuál de estas NO es una respuesta legal?", options: ["Mover el rey", "Capturar la pieza atacante", "Bloquear el ataque si es una línea", "Hacer jaque al rey rival ignorando el tuyo"], answer: 3, label: "Defensa real" },
-  { tier: 4, prompt: "Cuatro personas cruzan un puente de noche en 1, 2, 7 y 10 minutos. Solo caben dos y hay una linterna. ¿Tiempo mínimo?", options: ["17", "19", "20", "21"], answer: 0, label: "Estrategia élite" },
-];
-
 export const menu: MenuItem[] = [
   { label: "Cerveza", cost: 2 },
   { label: "Chupito", cost: 3 },
@@ -154,4 +140,19 @@ export const dexPool: Capture[] = [
   { id: 144, name: "Articuno", rarity: "Legendario", sprite: "144", value: 4 },
   { id: 145, name: "Zapdos", rarity: "Legendario", sprite: "145", value: 4 },
   { id: 146, name: "Moltres", rarity: "Legendario", sprite: "146", value: 4 },
+  { id: 39, name: "Jigglypuff", rarity: "Normal", sprite: "39", value: 1 },
+  { id: 54, name: "Psyduck", rarity: "Normal", sprite: "54", value: 1 },
+  { id: 58, name: "Growlithe", rarity: "Normal", sprite: "58", value: 1 },
+  { id: 63, name: "Abra", rarity: "Normal", sprite: "63", value: 1 },
+  { id: 66, name: "Machop", rarity: "Normal", sprite: "66", value: 1 },
+  { id: 92, name: "Gastly", rarity: "Normal", sprite: "92", value: 1 },
+  { id: 95, name: "Onix", rarity: "Normal", sprite: "95", value: 1 },
+  { id: 131, name: "Lapras", rarity: "Especial", sprite: "131", value: 2 },
+  { id: 130, name: "Gyarados", rarity: "Especial", sprite: "130", value: 2 },
+  { id: 448, name: "Lucario", rarity: "Especial", sprite: "448", value: 2 },
+  { id: 282, name: "Gardevoir", rarity: "Especial", sprite: "282", value: 2 },
+  { id: 359, name: "Absol", rarity: "Especial", sprite: "359", value: 2 },
+  { id: 384, name: "Rayquaza", rarity: "Legendario", sprite: "384", value: 4 },
+  { id: 249, name: "Lugia", rarity: "Legendario", sprite: "249", value: 4 },
+  { id: 250, name: "Ho-Oh", rarity: "Legendario", sprite: "250", value: 4 },
 ];

@@ -32,6 +32,8 @@ export type Player = {
   captures: Capture[];
   arenaEvents: string[];
   questionHistory?: string[];
+  arenaHistory?: ArenaMatchSummary[];
+  redemptions?: RedemptionSummary[];
   evolvedShown?: boolean;
 };
 
@@ -47,11 +49,29 @@ export type Station = {
 };
 
 export type Question = {
-  tier: 1 | 2 | 3 | 4;
-  prompt: string;
+  id: string;
+  category: "general" | "trick";
+  question: string;
   options: [string, string, string, string];
-  answer: number;
-  label: string;
+  correctAnswer: number;
+};
+
+export type ArenaMatchSummary = {
+  id: string;
+  stationId?: string;
+  opponentId: string;
+  challenge: string;
+  winnerId?: string;
+  loserId?: string;
+  rewardTokens: number;
+  createdAt?: string | null;
+};
+
+export type RedemptionSummary = {
+  id: string;
+  itemName: string;
+  tokenCost: number;
+  createdAt?: string | null;
 };
 
 export type Eeveelution = {
