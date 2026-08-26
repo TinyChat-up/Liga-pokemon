@@ -1,5 +1,6 @@
 alter table public.arena_matches
   add column if not exists station_id text,
+  add column if not exists winner_player_id uuid references public.profiles(id),
   add column if not exists loser_player_id uuid references public.profiles(id),
   add column if not exists resolved_at timestamptz;
 

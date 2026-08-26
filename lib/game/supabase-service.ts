@@ -313,7 +313,6 @@ export async function resolveArenaMatchRemotely(
         player_two_id: playerTwo.dbId,
         challenge,
         reward_tokens: rewardTokens,
-        winner_player_id: winner.dbId,
       })
       .select("id")
       .maybeSingle();
