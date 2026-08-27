@@ -80,14 +80,14 @@ export const stations: Station[] = [
 ];
 
 export const eeveelutions: Eeveelution[] = [
-  { name: "Flareon", type: "Fuego", perk: "Un segundo intento una vez por combate", image: "136" },
-  { name: "Vaporeon", type: "Agua", perk: "Recuperación extra en Centro Pokémon", image: "134" },
-  { name: "Jolteon", type: "Eléctrico", perk: "Pista rápida en códigos", image: "135" },
-  { name: "Espeon", type: "Psíquico", perk: "Pista en lógica y deducción", image: "196" },
-  { name: "Umbreon", type: "Siniestro", perk: "Menor pérdida de energía al fallar", image: "197" },
-  { name: "Leafeon", type: "Planta", perk: "Pista en retos visuales", image: "470" },
-  { name: "Glaceon", type: "Hielo", perk: "Descarta una respuesta errónea", image: "471" },
-  { name: "Sylveon", type: "Hada", perk: "Ventaja especial en Team Rocket", image: "700" },
+  { name: "Flareon", type: "Fuego", perk: "El primer fallo de cada combate no quita energía", image: "136" },
+  { name: "Vaporeon", type: "Agua", perk: "El Centro Pokémon cuesta 1 token menos", image: "134" },
+  { name: "Jolteon", type: "Eléctrico", perk: "+1 token al vencer a un entrenador", image: "135" },
+  { name: "Espeon", type: "Psíquico", perk: "Comprueba una respuesta por combate antes de atacar", image: "196" },
+  { name: "Umbreon", type: "Siniestro", perk: "Cada fallo quita 25% de energía en vez de 50%", image: "197" },
+  { name: "Leafeon", type: "Planta", perk: "Más probabilidad de capturas especiales y legendarias", image: "470" },
+  { name: "Glaceon", type: "Hielo", perk: "Bloquea una respuesta incorrecta en cada combate", image: "471" },
+  { name: "Sylveon", type: "Hada", perk: "+1 token al vencer al Team Rocket", image: "700" },
 ];
 
 export const menu: MenuItem[] = [
