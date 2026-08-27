@@ -46,7 +46,7 @@ is unavoidable.
 
 ## Exact profiles
 
-There are 14 profiles in total. Alejandro is the only administrator.
+There are 15 profiles in total. Alejandro is the only administrator.
 
 1. Eduardo
 2. Karim
@@ -61,11 +61,12 @@ There are 14 profiles in total. Alejandro is the only administrator.
 11. Marco
 12. Alex
 13. Maria Loufoukou
-14. Alejandro - administrator
+14. Juan Carlos
+15. Alejandro - administrator
 
 Display the accented forms `María Santana`, `María Alfonso`, and
 `María Loufoukou` when the stored data uses those names. Never invent a
-fifteenth attendee.
+sixteenth attendee.
 
 ## Core game rules
 

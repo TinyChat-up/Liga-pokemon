@@ -16,6 +16,7 @@ export const playerNames = [
   "Marco",
   "Alex",
   "María Loufoukou",
+  "Juan Carlos",
 ] as const;
 
 export const defaultPlayers: Player[] = [

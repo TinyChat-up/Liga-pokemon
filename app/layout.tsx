@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./game-ui.css";
 
 export const metadata: Metadata = {
   title: "Nivel 27 · Liga de la Terraza",
