@@ -13,7 +13,6 @@ export const REWARDS = {
 export const STORAGE_KEYS = {
   activePlayer: "liga27-active-player",
   localPlayers: "liga27-players-local",
-  accessGranted: "liga27-access-granted",
 } as const;
 
 export const REQUIRED_QR_COUNT = 12;

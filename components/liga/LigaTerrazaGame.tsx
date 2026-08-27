@@ -33,9 +33,7 @@ import type { Question } from "@/lib/game/types";
 export function LigaTerrazaGame() {
   const [players, setPlayers] = useState<Player[]>(defaultPlayers);
   const [activeId, setActiveId] = useState("");
-  const [accessGranted, setAccessGranted] = useState(() =>
-    typeof window === "undefined" ? false : localStorage.getItem(STORAGE_KEYS.accessGranted) === "true",
-  );
+  const [accessGranted, setAccessGranted] = useState(false);
   const [accessCode, setAccessCode] = useState("");
   const [screen, setScreen] = useState<GameScreen>("select");
   const [station, setStation] = useState<Station | null>(null);
@@ -131,8 +129,8 @@ export function LigaTerrazaGame() {
 
   useEffect(()=>{if(!loaded||!activeId||!active.evolution||!isOpen||screen!=="waiting")return;const timer=window.setTimeout(()=>setScreen("home"),0);return()=>window.clearTimeout(timer);},[loaded,activeId,active.evolution,isOpen,screen]);
 
-  function unlockAccess(){if(accessCode.trim()!==ACCESS_CODE){setMessage("Código incorrecto.");return;}localStorage.setItem(STORAGE_KEYS.accessGranted,"true");setAccessGranted(true);setMessage("Acceso de Alejandro desbloqueado en este dispositivo.");setScreen(activeId?(active.evolution?"home":"partner"):"select");}
-  function lockAccess(){localStorage.removeItem(STORAGE_KEYS.accessGranted);setAccessGranted(false);setMessage("Acceso privado cerrado. Vista pública activada.");setScreen(activeId?(active.evolution?"waiting":"partner"):"select");}
+  function unlockAccess(){if(accessCode.trim()!==ACCESS_CODE){setMessage("Código incorrecto.");return;}setAccessGranted(true);setAccessCode("");setMessage("Acceso de Alejandro desbloqueado hasta que recargues la app.");setScreen(activeId?(active.evolution?"home":"partner"):"select");}
+  function lockAccess(){setAccessGranted(false);setAccessCode("");setMessage("Acceso privado cerrado. Vista pública activada.");setScreen(activeId?(active.evolution?"waiting":"partner"):"select");}
 
   async function startStation(next:Station){ if(!isOpen){setScreen("waiting");return;} if(active.energy<=0){setMessage("Tu compañero está debilitado. Ve al Centro Pokémon de Alejandro para recuperar vida.");setScreen("home");return;} if(active.route.includes(next.id)){setMessage("Este entrenador ya está superado en tu ruta.");return;} if(next.id!==expectedStationId){const expected=stations.find((item)=>item.id===expectedStationId);setMessage(expected?`Aún no toca este QR. El siguiente es ${expected.title}.`:"La ruta ya está completa.");setScreen("route");return;} if(arenaStops.includes(next.id)&&!active.arenaEvents?.includes(next.id)){setPendingStation(next);setArenaChallenge("");setArenaOpponent("");setArenaWinner("");setArenaStartedAt(null);setScreen("arena");setMessage("¡Aparece la Arena de Payá antes del combate!");return;} await openBattle(next); }
   async function openBattle(next: Station, force = false){
