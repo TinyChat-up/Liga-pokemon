@@ -1,4 +1,6 @@
-export const TEST_MODE = true;
+export const TEST_MODE = false;
+
+export const ACCESS_CODE = "8128";
 
 export const GAME_OPENS_AT = new Date("2026-08-29T17:00:00+02:00").getTime();
 
@@ -11,6 +13,7 @@ export const REWARDS = {
 export const STORAGE_KEYS = {
   activePlayer: "liga27-active-player",
   localPlayers: "liga27-players-local",
+  accessGranted: "liga27-access-granted",
 } as const;
 
 export const REQUIRED_QR_COUNT = 12;

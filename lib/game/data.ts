@@ -91,9 +91,10 @@ export const eeveelutions: Eeveelution[] = [
 
 export const menu: MenuItem[] = [
   { label: "Cerveza", cost: 2 },
-  { label: "Chupito", cost: 3 },
-  { label: "Cubata", cost: 6 },
-  { label: "Extra de barbacoa", cost: 4 },
+  { label: "Cubata", cost: 4 },
+  { label: "Agua", cost: 1 },
+  { label: "Chupito", cost: 2 },
+  { label: "Ruleta sorpresa", cost: 5 },
 ];
 
 export const journeyIds = [
