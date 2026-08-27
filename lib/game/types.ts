@@ -87,7 +87,6 @@ export type MenuItem = {
 };
 
 export type GameScreen =
-  | "gate"
   | "select"
   | "partner"
   | "waiting"
