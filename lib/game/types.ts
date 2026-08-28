@@ -50,7 +50,7 @@ export type Station = {
 
 export type Question = {
   id: string;
-  category: "general" | "trick";
+  category: "general" | "trick" | "couple";
   question: string;
   options: [string, string, string, string];
   correctAnswer: number;
@@ -97,4 +97,5 @@ export type GameScreen =
   | "scan"
   | "arena"
   | "team"
+  | "admin-gate"
   | "admin";

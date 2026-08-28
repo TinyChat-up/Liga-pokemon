@@ -1,4 +1,4 @@
-import type { Capture, Eeveelution, MenuItem, Player, Question, Station } from "./types";
+import type { Capture, Eeveelution, MenuItem, Player, Station } from "./types";
 import { REWARDS } from "./rules";
 export { QUESTION_BANK as questions } from "./question-bank";
 
@@ -96,33 +96,6 @@ export const menu: MenuItem[] = [
   { label: "Agua", cost: 1 },
   { label: "Chupito", cost: 2 },
   { label: "Ruleta sorpresa", cost: 5 },
-];
-
-export const eliteFourQuestions: Question[] = [
-  {
-    id: "elite-four-aaron-1",
-    category: "trick",
-    question:
-      "La sucesión es 1, 11, 21, 1211, 111221. ¿Cuál es el siguiente término?",
-    options: ["312211", "1113213211", "13112221", "122111"],
-    correctAnswer: 0,
-  },
-  {
-    id: "elite-four-bertha-2",
-    category: "general",
-    question:
-      "Tres personas A, B y C dicen: A: 'B miente'. B: 'C miente'. C: 'A y B mienten'. Si exactamente una dice la verdad, ¿quién es?",
-    options: ["A", "B", "C", "Ninguna"],
-    correctAnswer: 1,
-  },
-  {
-    id: "elite-four-flint-3",
-    category: "general",
-    question:
-      "Un número de dos cifras cumple que al invertirlo aumenta en 27 y la suma de sus cifras es 9. ¿Cuál es?",
-    options: ["36", "45", "54", "63"],
-    correctAnswer: 0,
-  },
 ];
 
 export const journeyIds = [
