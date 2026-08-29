@@ -15,14 +15,18 @@ import {
 } from "@/lib/game/data";
 import { ELITE_QUESTION_BANK } from "@/lib/game/elite-question-bank";
 import { ACCESS_CODE, GAME_OPENS_AT, REWARDS, STORAGE_KEYS, TEST_MODE } from "@/lib/game/rules";
-import type { Capture, Evolution, GameScreen, Player, Question, Station } from "@/lib/game/types";
+import type { Capture, Evolution, GameScreen, Player, Question, Station, TeamInviteSummary } from "@/lib/game/types";
 import {
   completeStationRemotely,
+  completeTeamStationRemotely,
+  completeEliteFourRemotely,
   createTeamInvite,
   loadGameSnapshot,
   recordQuestionAnswer,
   recordQuestionShown,
+  recoverPlayerRemotely,
   redeemCaptureRemotely,
+  respondToTeamInvite,
   resolveArenaMatchRemotely,
   saveProfile,
   spendTokensRemotely,
@@ -37,6 +41,12 @@ import {
   getStationReward,
   hasEvolutionPerk,
 } from "@/lib/game/evolution-perks";
+import {
+  FINAL_REWARDS,
+  getAchievements,
+  getCollectionBadges,
+  getStationPresentation,
+} from "@/lib/game/progression";
 import { supabase } from "@/lib/supabase";
 
 const eliteTrainers = [
@@ -118,6 +128,12 @@ export function LigaTerrazaGame() {
     title: string;
     body: string;
   } | null>(null);
+  const [teamInvites, setTeamInvites] = useState<TeamInviteSummary[]>([]);
+  const [correctStreak, setCorrectStreak] = useState(0);
+  const [finalSaving, setFinalSaving] = useState(false);
+  const [adminReason, setAdminReason] = useState("Corrección durante el evento");
+  const [qrCheckInput, setQrCheckInput] = useState("");
+  const [qrCheckResult, setQrCheckResult] = useState("");
 
   function loadLocalPlayers(): Player[] {
     if (typeof window === "undefined") return defaultPlayers;
@@ -148,6 +164,7 @@ export function LigaTerrazaGame() {
     try {
       const snapshot = await loadGameSnapshot(supabase);
       setPlayers(snapshot.players);
+      setTeamInvites(snapshot.teamInvites);
       setSyncStatus(snapshot.mode === "remote" ? "online" : "local");
     } catch {
       setSyncStatus("error");
@@ -163,6 +180,13 @@ export function LigaTerrazaGame() {
   useEffect(()=>()=>{scannerControlsRef.current?.stop();scannerControlsRef.current=null;},[]);
   const active = useMemo(()=>players.find((p)=>p.id===activeId) ?? players[0],[players,activeId]);
   const target = useMemo(()=>players.find((p)=>p.id===adminTarget) ?? players[0],[players,adminTarget]);
+  const incomingInvite=teamInvites.find((invite)=>invite.toPlayerId===active.dbId&&invite.status==="pending");
+  const activeAchievements=getAchievements(active);
+  const collectionBadges=getCollectionBadges(active.captures);
+  const champions=players.filter((player)=>player.finalReward).sort((left,right)=>(left.finalCompletedAt??"").localeCompare(right.finalCompletedAt??""));
+  const captureLeader=[...players].sort((left,right)=>right.captures.length-left.captures.length)[0];
+  const arenaLeader=[...players].sort((left,right)=>(right.arenaHistory??[]).filter((match)=>match.winnerId===right.dbId).length-(left.arenaHistory??[]).filter((match)=>match.winnerId===left.dbId).length)[0];
+  const rarestCapture=players.flatMap((player)=>player.captures.map((capture)=>({player,capture}))).sort((left,right)=>right.capture.value-left.capture.value)[0];
   const targetHealingCost=getHealingCost(target,healCost);
   const complete=active.route.length; const finalUnlocked=complete===stations.length;
   const isOpen=TEST_MODE || accessGranted || now>=GAME_OPENS_AT;
@@ -181,6 +205,7 @@ export function LigaTerrazaGame() {
   const arenaRemainingMs=arenaStartedAt?Math.max(0,600000-(now-arenaStartedAt)):600000;
   const arenaTimer=`${String(Math.floor(arenaRemainingMs/60000)).padStart(2,"0")}:${String(Math.floor((arenaRemainingMs%60000)/1000)).padStart(2,"0")}`;
   const expectedStationId=journeyIds[complete];
+  const battlePresentation=station?getStationPresentation(station):null;
   const eliteTrainerIndex=Math.min(eliteTrainers.length-1,Math.floor(eliteIndex/2));
   const eliteTrainer=eliteTrainers[eliteTrainerIndex] ?? eliteTrainers[0];
   const eliteQuestion=eliteRunQuestions[eliteIndex] ?? ELITE_QUESTION_BANK[0];
@@ -203,7 +228,64 @@ export function LigaTerrazaGame() {
   function showCriticalAlert(kind:"energy"|"tokens",title:string,body:string){setCriticalAlert({kind,title,body});setMessage(body);}
   function startEliteFour(){if(!finalUnlocked){setMessage("Completa los 12 QR antes de entrar en Meseta Añil.");return;}if(active.energy<=0){showCriticalAlert("energy","Tu Pokémon no tiene vida","Ve al Centro Pokémon de Alejandro antes de entrar en el Alto Mando.");return;}const selected=selectEliteQuestions();setEliteRunQuestions(selected);setEliteIndex(0);setEliteEnemyHp(100);setEliteTransitioning(false);setEliteAnswer(null);setEliteOutcome(null);setChampionName("");setBattlePerkUsed(false);setBlockedAnswer(getGlaceonBlockedAnswer(active,selected[0]));setEliteActive(true);setMessage("El Alto Mando comienza. Derrota a 3 rivales: cada uno resiste 2 respuestas correctas.");}
 
-  async function startStation(next:Station){ if(!isOpen){setScreen("waiting");return;} if(active.energy<=0){showCriticalAlert("energy","Tu Pokémon no tiene vida","Ve al Centro Pokémon de Alejandro para recuperarla al 100%.");setScreen("home");return;} if(active.route.includes(next.id)){setMessage("Este entrenador ya está superado en tu ruta.");return;} if(next.id!==expectedStationId){const expected=stations.find((item)=>item.id===expectedStationId);setMessage(expected?`Aún no toca este QR. El siguiente es ${expected.title}.`:"La ruta ya está completa.");setScreen("route");return;} if(arenaStops.includes(next.id)&&!active.arenaEvents?.includes(next.id)){setPendingStation(next);setArenaChallenge("");setArenaOpponent("");setArenaWinner("");setArenaStartedAt(null);setScreen("arena");setMessage("¡Aparece la Arena de Payá antes del combate!");return;} await openBattle(next); }
+  async function finishEliteFour(){
+    if(finalSaving)return;
+    setFinalSaving(true);
+    const proposed=active.finalReward??FINAL_REWARDS[Math.floor(Math.random()*FINAL_REWARDS.length)];
+    try{
+      const result=await completeEliteFourRemotely(supabase,active,proposed);
+      const completedAt=active.finalCompletedAt??new Date().toISOString();
+      patchActive({finalReward:result.reward,finalCompletedAt:completedAt});
+      setChampionName(active.name);
+      setEliteOutcome("won");
+      setEliteTransitioning(false);
+      setMessage(`¡${active.name} ha conquistado la Liga! Premio de BBQ: ${result.reward}.`);
+    }catch{
+      setSyncStatus("error");
+      setEliteTransitioning(false);
+      setMessage("No se ha podido guardar el título de campeón. Mantén esta pantalla y revisa la conexión.");
+    }finally{
+      setFinalSaving(false);
+    }
+  }
+
+  async function answerInvite(invite:TeamInviteSummary,status:"accepted"|"declined"){
+    try{
+      await respondToTeamInvite(supabase,invite.id,status);
+      setTeamInvites((current)=>current.map((item)=>item.id===invite.id?{...item,status}:item));
+      if(status==="accepted"&&invite.stationId){
+        const invitedStation=stations.find((item)=>item.id===invite.stationId);
+        if(invitedStation){setPendingStation(invitedStation);setScreen("team");}
+      }
+      setMessage(status==="accepted"?"Invitación aceptada. El Team Rocket os espera.":"Invitación rechazada.");
+    }catch{
+      setSyncStatus("error");
+      setMessage("No se ha podido responder a la invitación.");
+    }
+  }
+
+  function verifyQrCode(value:string){
+    const code=extractQrCode(value);
+    const route=stations.find((item)=>item.id===code);
+    const player=players.find((item)=>item.id===code);
+    const result=route?`QR correcto: ${route.title} (${route.id}).`:player?`Tarjeta correcta: ${player.name} (${player.id}).`:code==="alto-mando"?"QR correcto: Alto Mando.":code==="arena"?"QR correcto: Arena de Payá.":"Código no reconocido.";
+    setQrCheckResult(result);
+  }
+
+  async function runAdminRecovery(action:"heal"|"tokens"|"unstick",tokenDelta=0){
+    if(!adminReason.trim()){setMessage("Escribe un motivo para dejar constancia del ajuste.");return;}
+    setBusyAction(true);
+    try{
+      await recoverPlayerRemotely(supabase,target,action,adminReason,tokenDelta,journeyIds[target.route.length]??null);
+      persist(players.map((player)=>player.id===target.id?{...player,energy:action==="heal"?100:player.energy,tokens:action==="tokens"?Math.max(0,player.tokens+tokenDelta):player.tokens}:player));
+      setMessage(action==="heal"?`${target.name} recuperado al 100%.`:action==="tokens"?`Saldo de ${target.name} ajustado en ${tokenDelta>0?"+":""}${tokenDelta}.`:`Invitaciones y encuentro pendiente de ${target.name} desbloqueados.`);
+    }catch(error){
+      setSyncStatus("error");
+      setMessage(`No se ha podido aplicar el rescate.${error instanceof Error?` ${error.message}`:""}`);
+    }finally{setBusyAction(false);}
+  }
+
+  async function startStation(next:Station){ if(!isOpen){setScreen("waiting");return;} if(active.energy<=0){showCriticalAlert("energy","Tu Pokémon no tiene vida","Ve al Centro Pokémon de Alejandro para recuperarla al 100%.");setScreen("home");return;} if(active.route.includes(next.id)){setMessage("Este entrenador ya está superado en tu ruta.");return;} if(next.id!==expectedStationId){const expected=stations.find((item)=>item.id===expectedStationId);setMessage(expected?`Aún no toca este QR. El siguiente es ${expected.title}.`:"La ruta ya está completa.");setScreen("route");return;} if(arenaStops.includes(next.id)&&!active.arenaEvents?.includes(next.id)){setPendingStation(next);setArenaChallenge("");setArenaOpponent("");setArenaWinner("");setArenaStartedAt(null);setScreen("arena");setMessage("¡Aparece la Arena de Payá antes del combate!");return;} if(next.kind==="rocket"){setPendingStation(next);setTeamMate("");setPlayerCardCode("");setScreen("team");setMessage("Misión Team Rocket: invita a otra persona o entra en solitario.");return;} await openBattle(next); }
   async function openBattle(next: Station, force = false){
     if(busyAction&&!force)return;
     setBusyAction(true);
@@ -231,6 +313,7 @@ export function LigaTerrazaGame() {
       setBattleCapture(null);
       setBattleReward(0);
       setBattlePerkUsed(false);
+      setCorrectStreak(0);
       setBlockedAnswer(getGlaceonBlockedAnswer(active,selected));
       setMessage(getGlaceonBlockedAnswer(active,selected)!==null?"Glaceon ha congelado una respuesta incorrecta.":"");
       setStation(next);
@@ -244,8 +327,92 @@ export function LigaTerrazaGame() {
   function chooseEvolution(evolution: Evolution){patchActive({evolution});setScreen(isOpen?"home":"waiting");}
   function setPlayerEvolution(playerId:string, evolution:Evolution){persist(players.map((player)=>player.id===playerId?{...player,evolution}:player));setMessage(`Evolución actualizada.`);}
   function randomCapture(){const rarity=getCaptureRarity(active,Math.random()*100);const pool=dexPool.filter((pokemon)=>pokemon.rarity===rarity);return pool[Math.floor(Math.random()*pool.length)];}
-  async function resolveBattle(){if(!station||answer===null||!battleQuestion||busyAction||battleOutcome)return;const correct=answer===battleQuestion.correctAnswer;try{await recordQuestionAnswer(supabase,active,questionKey(battleQuestion),answer,correct);}catch{setSyncStatus("error");}if(!correct){if(evolutionPerkActive&&active.evolution==="Flareon"&&!battlePerkUsed){setBattlePerkUsed(true);setAnswer(null);setMessage("Llama protectora de Flareon: este primer fallo no quita energía.");return;}const loss=getFailureDamage(active);const energy=Math.max(0,active.energy-loss);showDamage();patchActive({energy});setAnswer(null);if(energy===0){setBattleOutcome("dead");showCriticalAlert("energy","Tu Pokémon se ha debilitado","Ve al Centro Pokémon de Alejandro para recuperar la vida al 100%.");return;}setMessage(`¡${evolved} ha recibido daño! Pierdes un ${loss}% de energía.`);return;}if(active.route.includes(station.id)){setBattleOutcome("won");setMessage("Este combate ya estaba registrado.");return;}setBusyAction(true);const route=[...active.route,station.id];const xp=active.xp+25;const level=Math.max(1,Math.floor(xp/100)+1);const capture={...randomCapture(),recordId:crypto.randomUUID()};const reward=getStationReward(active,station.kind,station.reward);try{await completeStationRemotely(supabase,active,station.id,reward,capture,xp,level);patchActive({route,tokens:active.tokens+reward,xp,level,captures:[...active.captures,capture]});setBattleCapture(capture);setBattleReward(reward);setBattleOutcome("won");setMessage(`¡El Pokémon rival se ha debilitado! Ganas ${reward} tokens.`);}catch{setSyncStatus("error");setMessage("No se ha podido registrar el combate en Supabase. Revisa conexión antes de continuar.");}finally{setBusyAction(false);}}
-  function resolveEliteBattle(){if(eliteAnswer===null||eliteOutcome||eliteTransitioning)return;const correct=eliteAnswer===eliteQuestion.correctAnswer;if(!correct){if(evolutionPerkActive&&active.evolution==="Flareon"&&!battlePerkUsed){setBattlePerkUsed(true);setEliteAnswer(null);setMessage("Llama protectora de Flareon: este primer fallo no quita energía.");return;}const loss=getFailureDamage(active);const energy=Math.max(0,active.energy-loss);showDamage();patchActive({energy});setEliteAnswer(null);if(energy===0){setEliteOutcome("dead");showCriticalAlert("energy","Tu Pokémon se ha debilitado","Alejandro debe curarlo en el Centro Pokémon antes de volver al Alto Mando.");return;}setMessage(`¡${evolved} ha recibido daño! Pierdes un ${loss}% de energía.`);return;}const nextIndex=eliteIndex+1;const rivalDefeated=nextIndex%2===0;setEliteAnswer(null);setEliteTransitioning(true);setEliteEnemyHp(rivalDefeated?0:50);setMessage(rivalDefeated?`¡${eliteTrainer.ace} se ha debilitado! Has derrotado a ${eliteTrainer.name}.`:`¡Es muy eficaz! ${eliteTrainer.ace} pierde la mitad de sus PS.`);window.setTimeout(()=>{if(nextIndex>=6){setEliteOutcome("won");setChampionName(active.name);setMessage(`¡${active.name} ha conquistado la Liga de la Terraza tras 6 aciertos!`);setEliteTransitioning(false);return;}setEliteIndex(nextIndex);setEliteEnemyHp(rivalDefeated?100:50);setBattlePerkUsed(false);setBlockedAnswer(getGlaceonBlockedAnswer(active,eliteRunQuestions[nextIndex]));setEliteTransitioning(false);},900);}
+  async function resolveBattle(){
+    if(!station||answer===null||!battleQuestion||busyAction||battleOutcome)return;
+    const correct=answer===battleQuestion.correctAnswer;
+    try{await recordQuestionAnswer(supabase,active,questionKey(battleQuestion),answer,correct);}catch{setSyncStatus("error");}
+    if(!correct){
+      setCorrectStreak(0);
+      if(evolutionPerkActive&&active.evolution==="Flareon"&&!battlePerkUsed){setBattlePerkUsed(true);setAnswer(null);setMessage("Llama protectora de Flareon: este primer fallo no quita energía.");return;}
+      const loss=getFailureDamage(active);
+      const energy=Math.max(0,active.energy-loss);
+      showDamage();
+      patchActive({energy,wrongAnswers:(active.wrongAnswers??0)+1});
+      setAnswer(null);
+      if(energy===0){setBattleOutcome("dead");showCriticalAlert("energy","Tu Pokémon se ha debilitado","Ve al Centro Pokémon de Alejandro para recuperar la vida al 100%.");return;}
+      setMessage(`¡${evolved} ha recibido daño! Pierdes un ${loss}% de energía.`);
+      return;
+    }
+    const nextStreak=correctStreak+1;
+    setCorrectStreak(nextStreak);
+    if(active.route.includes(station.id)){setBattleOutcome("won");setMessage("Este combate ya estaba registrado.");return;}
+    setBusyAction(true);
+    const route=[...active.route,station.id];
+    const xp=active.xp+25;
+    const level=Math.max(1,Math.floor(xp/100)+1);
+    const capture={...randomCapture(),recordId:crypto.randomUUID()};
+    const reward=getStationReward(active,station.kind,station.reward);
+    const linkedTeammate=station.kind==="rocket"?players.find((player)=>player.id===teamMate&&journeyIds[player.route.length]===station.id):undefined;
+    const teammateCapture=linkedTeammate?{...randomCapture(),recordId:crypto.randomUUID()}:null;
+    try{
+      if(linkedTeammate&&teammateCapture){
+        await completeTeamStationRemotely(supabase,active,linkedTeammate,station.id,reward,capture,teammateCapture);
+        setPlayers((current)=>{
+          const next=current.map((player)=>{
+            if(player.id===active.id)return{...player,route,tokens:player.tokens+reward,xp,level,captures:[...player.captures,capture],correctAnswers:(player.correctAnswers??0)+1};
+            if(player.id===linkedTeammate.id){const partnerXp=player.xp+25;return{...player,route:[...player.route,station.id],tokens:player.tokens+reward,xp:partnerXp,level:Math.floor(partnerXp/100)+1,captures:[...player.captures,teammateCapture]};}
+            return player;
+          });
+          if(!supabase)saveLocalPlayers(next);
+          return next;
+        });
+      }else{
+        await completeStationRemotely(supabase,active,station.id,reward,capture,xp,level);
+        patchActive({route,tokens:active.tokens+reward,xp,level,captures:[...active.captures,capture],correctAnswers:(active.correctAnswers??0)+1});
+      }
+      setBattleCapture(capture);
+      setBattleReward(reward);
+      setBattleOutcome("won");
+      setMessage(`¡El Pokémon rival se ha debilitado! ${linkedTeammate?`${active.name} y ${linkedTeammate.name} recibís progreso, captura y ${reward} tokens.`:`Ganas ${reward} tokens.`}${nextStreak>=2?` Racha de ${nextStreak} aciertos.`:""}`);
+    }catch{
+      setSyncStatus("error");
+      setMessage("No se ha podido registrar el combate en Supabase. Revisa conexión antes de continuar.");
+    }finally{setBusyAction(false);}
+  }
+
+  function resolveEliteBattle(){
+    if(eliteAnswer===null||eliteOutcome||eliteTransitioning||finalSaving)return;
+    const correct=eliteAnswer===eliteQuestion.correctAnswer;
+    if(!correct){
+      setCorrectStreak(0);
+      if(evolutionPerkActive&&active.evolution==="Flareon"&&!battlePerkUsed){setBattlePerkUsed(true);setEliteAnswer(null);setMessage("Llama protectora de Flareon: este primer fallo no quita energía.");return;}
+      const loss=getFailureDamage(active);
+      const energy=Math.max(0,active.energy-loss);
+      showDamage();
+      patchActive({energy,wrongAnswers:(active.wrongAnswers??0)+1});
+      setEliteAnswer(null);
+      if(energy===0){setEliteOutcome("dead");showCriticalAlert("energy","Tu Pokémon se ha debilitado","Alejandro debe curarlo en el Centro Pokémon antes de volver al Alto Mando.");return;}
+      setMessage(`¡${evolved} ha recibido daño! Pierdes un ${loss}% de energía.`);
+      return;
+    }
+    const nextStreak=correctStreak+1;
+    setCorrectStreak(nextStreak);
+    patchActive({correctAnswers:(active.correctAnswers??0)+1});
+    const nextIndex=eliteIndex+1;
+    const rivalDefeated=nextIndex%2===0;
+    setEliteAnswer(null);
+    setEliteTransitioning(true);
+    setEliteEnemyHp(rivalDefeated?0:50);
+    setMessage(rivalDefeated?`¡${eliteTrainer.ace} se ha debilitado! Has derrotado a ${eliteTrainer.name}.`:`¡Es muy eficaz! Racha de ${nextStreak} aciertos.`);
+    window.setTimeout(()=>{
+      if(nextIndex>=6){void finishEliteFour();return;}
+      setEliteIndex(nextIndex);
+      setEliteEnemyHp(rivalDefeated?100:50);
+      setBattlePerkUsed(false);
+      setBlockedAnswer(getGlaceonBlockedAnswer(active,eliteRunQuestions[nextIndex]));
+      setEliteTransitioning(false);
+    },900);
+  }
   function finishBattleVictory(){const evolveNow=active.route.length===4&&Boolean(active.evolution)&&!active.evolvedShown;setStation(null);setBattleQuestion(null);setBattleOutcome(null);setBattleCapture(null);setBattleReward(0);setScreen(evolveNow?"evolution":"home");}
   async function redeemBattleCapture(){if(!battleCapture||busyAction)return;setBusyAction(true);try{const redeemed=await redeemCaptureRemotely(supabase,active,battleCapture);if(!redeemed){setMessage("Esta captura ya estaba canjeada.");return;}patchActive({captures:active.captures.filter((capture)=>capture.recordId!==battleCapture.recordId),tokens:active.tokens+battleCapture.value});setMessage(`${battleCapture.name} canjeado por ${battleCapture.value} token${battleCapture.value===1?"":"s"}.`);finishBattleVictory();}catch{setSyncStatus("error");setMessage("No se ha podido canjear la captura. Inténtalo de nuevo.");}finally{setBusyAction(false);}}
   async function cashCapture(index:number){ if(busyAction)return; const capture=active.captures[index]; if(!capture)return; setBusyAction(true); try{const redeemed=await redeemCaptureRemotely(supabase,active,capture); if(!redeemed){setMessage("Esta captura ya estaba canjeada o no pertenece al jugador.");return;} patchActive({captures:active.captures.filter((_,i)=>i!==index),tokens:active.tokens+capture.value});setMessage(`${capture.name} canjeado por ${capture.value} token${capture.value>1?"s":""}.`);}catch{setSyncStatus("error");setMessage("No se ha podido canjear la captura. Inténtalo de nuevo.");}finally{setBusyAction(false);} }
@@ -297,7 +464,7 @@ export function LigaTerrazaGame() {
   async function redeem(item:(typeof menu)[number]){if(busyAction)return;if(target.tokens<item.cost){showCriticalAlert("tokens","No hay tokens suficientes",`${target.name} necesita ${item.cost} tokens para canjear ${item.label}.`);return;}setBusyAction(true);try{const ok=await spendTokensRemotely(supabase,target,item.label,item.cost); if(!ok){showCriticalAlert("tokens","No hay tokens suficientes",`${target.name} no tiene saldo suficiente para completar el canje.`);return;}persist(players.map((p)=>p.id===target.id?{...p,tokens:p.tokens-item.cost}:p));if(item.label==="Ruleta sorpresa"){setRouletteResult("");setRouletteSpinning(true);window.setTimeout(()=>{setRouletteSpinning(false);setRouletteResult(Math.random()<0.5?"Prueba otra vez":"Chupito");},2200);}setMessage(`Canje confirmado: ${item.label} para ${target.name}.`);}catch{setSyncStatus("error");setMessage("No se ha podido registrar el canje en Supabase.");}finally{setBusyAction(false);}}
   async function heal(){if(busyAction)return;const cost=targetHealingCost;if(target.tokens<cost){showCriticalAlert("tokens","No hay tokens suficientes",`${target.name} necesita ${cost} tokens para usar el Centro Pokémon.`);return;}setBusyAction(true);try{if(cost>0){const ok=await spendTokensRemotely(supabase,target,"Centro Pokémon",cost);if(!ok){showCriticalAlert("tokens","No hay tokens suficientes",`${target.name} no tiene saldo suficiente para completar la cura.`);return;}}persist(players.map((p)=>p.id===target.id?{...p,energy:100,tokens:p.tokens-cost}:p));setMessage(`${target.name} vuelve al 100% de energía por ${cost} token${cost===1?"":"s"}${cost<Math.floor(healCost)?" gracias a Vaporeon":""}.`);}catch{setSyncStatus("error");setMessage("No se ha podido registrar la cura en Supabase.");}finally{setBusyAction(false);}}
   function award(){persist(players.map((p)=>p.id===target.id?{...p,tokens:p.tokens+REWARDS.arena}:p));setMessage(`+${REWARDS.arena} tokens de Arena para ${target.name}.`);}
-  async function linkTeammate(found:Player){if(busyAction)return;setBusyAction(true);try{await createTeamInvite(supabase,active.dbId,found.dbId,pendingStation?.id??null);setTeamMate(found.id);setMessage(`Invitación enviada a ${found.name}. Podéis jugar juntos.`);}catch{setSyncStatus("error");setMessage("No se ha podido enviar la invitación en Supabase.");}finally{setBusyAction(false);}}
+  async function linkTeammate(found:Player){if(busyAction)return;if(pendingStation&&journeyIds[found.route.length]!==pendingStation.id){setMessage(`${found.name} no está en esta misma parada de la ruta.`);return;}setBusyAction(true);try{await createTeamInvite(supabase,active.dbId,found.dbId,pendingStation?.id??null);setTeamMate(found.id);setMessage(`Invitación enviada a ${found.name}. Si entráis juntos, ambos recibiréis progreso, captura y tokens.`);}catch{setSyncStatus("error");setMessage("No se ha podido enviar la invitación en Supabase.");}finally{setBusyAction(false);}}
   function linkPlayerCard(code:string){const found=players.find((p)=>p.id===extractQrCode(code));if(!found||found.id===active.id){setMessage("Tarjeta no válida o es tu propio perfil.");return false;}if(screen==="arena"){setArenaOpponent(found.id);setArenaWinner("");setArenaStartedAt(Date.now());setMessage(`Tarjeta de ${found.name} enlazada. Empieza el reto de Arena.`);return true;}setPlayerCardCode(found.id);setMessage(`Tarjeta de ${found.name} detectada. Abre la Arena de Payá para retarle.`);return true;}
   function selectAdminPlayer(code:string){const found=players.find((p)=>p.id===extractQrCode(code));if(!found){setMessage("Tarjeta de jugador no reconocida.");return false;}setAdminTarget(found.id);setAdminCardCode(found.id);setMessage(`${found.name} identificado: ${found.tokens} tokens disponibles.`);return true;}
   function handleScannedValue(value:string){
@@ -353,7 +520,7 @@ export function LigaTerrazaGame() {
     }
   }
   function closeCamera(){scannerControlsRef.current?.stop();scannerControlsRef.current=null;const stream=videoRef.current?.srcObject as MediaStream | null;stream?.getTracks().forEach((track)=>track.stop());if(videoRef.current)videoRef.current.srcObject=null;setCameraOpen(false);}
-  if(!loaded)return null;
+  if(!loaded)return <main className="app-shell loading-game"><section><span className="ball-mark" aria-hidden="true">◓</span><p className="eyebrow">LIGA DE LA TERRAZA</p><h1>Conectando con la Liga</h1><div className="loading-track" aria-label="Cargando"><i/></div><small>Recuperando perfiles y progreso...</small></section></main>;
   const requestedScreen: GameScreen = screen==="select" ? "select" : !activeId ? "select" : !active.evolution ? "partner" : isOpen||screen==="partner" ? screen : "waiting";
   const visibleScreen: GameScreen = requestedScreen==="admin"&&!adminUnlocked ? "admin-gate" : requestedScreen;
 
@@ -363,18 +530,46 @@ export function LigaTerrazaGame() {
     {visibleScreen==="waiting"&&<section className="waiting-view"><img className="hero-eevee" src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${companionImage}.png`} alt={evolved}/><p className="eyebrow">LA LIGA TODAVÍA ESTÁ CERRADA</p><h1>Preparad<br/>vuestro equipo.</h1><p className="waiting-date">Sábado 29 de agosto · 17:00</p><div className="countdown">{([['Días',countdown.days],['Horas',countdown.hours],['Min',countdown.minutes],['Seg',countdown.seconds]] as const).map(([label,value])=><div key={label}><b>{String(value).padStart(2,'0')}</b><span>{label}</span></div>)}</div><article className="instructions-card"><b>Antes de que empiece</b><ol><li>Elige tu perfil y tu evolución de Eevee. Esa elección queda guardada.</li><li>El juego empieza el sábado a las 17:00. Hasta entonces solo verás este reloj y podrás cambiar tu Pokémon.</li><li>Cuando empiece, lee lo que ponga en el primer QR, cumple la prueba, escanéalo y resuelve el combate.</li><li>La ruta va en orden: no se puede saltar un QR. Son 12 paradas antes de la final.</li></ol></article><div className="rules-grid"><article><b>Arena de Payá</b><p>Aparecerá por sorpresa 2 veces durante la ruta. Elige rival, escanea su tarjeta, haced el reto con temporizador de 10 minutos y marca quién gana. Ganador: +2 tokens. Perdedor: energía a 0.</p></article><article><b>Centro Pokémon</b><p>Cada fallo quita vida. Si tu Pokémon cae a 0, no podrás seguir hasta ver a Alejandro. Te curará al 100% con chupito o con el precio que marque en ese momento.</p></article><article><b>Cantina</b><ul>{menu.map((item)=><li key={item.label}><span>{item.label}</span><b>{item.cost} token{item.cost===1?"":"s"}</b></li>)}</ul></article><article><b>BBQ de la victoria</b><p>Quien no termine la Liga Pokémon completa no podrá acceder a la BBQ de la victoria. La Meseta Añil se abre solo al completar los 12 QR.</p></article></div><button className="change-evolution" onClick={()=>setScreen("partner")}>Cambiar Eeveelution</button>{active.id==="alejandro"&&!isOpen&&<form className="access-card admin-access" onSubmit={(event)=>{event.preventDefault();unlockAccess();}}><label htmlFor="access-code">Acceso Alejandro</label><div className="code-entry"><input id="access-code" inputMode="numeric" value={accessCode} onChange={(event)=>setAccessCode(event.target.value)} placeholder="Código privado"/><button type="submit">Desbloquear</button></div></form>}{active.id==="alejandro"&&isOpen&&<button className="admin-shortcut" onClick={()=>setScreen("admin")}>Abrir administración</button>}{message&&<p className="toast">{message}</p>}</section>}
     {visibleScreen==="evolution"&&<section className="evolution-scene"><div className="evolution-stars" aria-hidden="true"><i/><i/><i/><i/><i/><i/></div><p>¿Qué? ¡Eevee está evolucionando!</p><div className="evolution-stage"><div className="evolution-energy" aria-hidden="true"><i/><i/><i/></div><img className="evolution-before" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/133.png" alt="Eevee"/><img className="evolution-after" src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${chosenEvolution?.image}.png`} alt={evolved}/></div><div className="evolution-dialogue"><span>¡Enhorabuena!</span><h1>¡Tu Eevee ha evolucionado en {evolved}!</h1><small>Ventaja desbloqueada: {chosenEvolution?.perk}</small></div><button onClick={()=>{patchActive({evolvedShown:true});setScreen("home");}}>Continuar aventura</button></section>}
     {visibleScreen==="home"&&chosenEvolution&&<article className={`perk-status ${evolutionPerkActive?"active":"locked"}`}><b>{evolutionPerkActive?"VENTAJA ACTIVA":"VENTAJA BLOQUEADA"}</b><span>{chosenEvolution.perk}</span><small>{evolutionPerkActive?`${chosenEvolution.name} ya puede usarla en el juego.`:"Se activa automáticamente al completar 4 capturas."}</small></article>}
+    {visibleScreen==="home"&&incomingInvite&&<article className="invite-alert"><span>R</span><div><b>¡Invitación Team Rocket!</b><small>{players.find((player)=>player.dbId===incomingInvite.fromPlayerId)?.name??"Otro entrenador"} quiere formar equipo contigo.</small></div><button onClick={()=>{void answerInvite(incomingInvite,"accepted");}}>Aceptar</button><button onClick={()=>{void answerInvite(incomingInvite,"declined");}}>Rechazar</button></article>}
+    {visibleScreen==="home"&&<section className="progress-extras"><div className="achievement-strip"><b>LOGROS {activeAchievements.filter((item)=>item.unlocked).length}/{activeAchievements.length}</b>{activeAchievements.map((item)=><span title={item.description} className={item.unlocked?"unlocked":""} key={item.id}>{item.unlocked?"★":"·"} {item.title}</span>)}</div>{collectionBadges.length>0&&<div className="badge-strip">{collectionBadges.map((badge)=><b key={badge}>{badge}</b>)}</div>}<button className="hall-shortcut" onClick={()=>setScreen("hall")}>Hall de la Fama</button></section>}
     {visibleScreen==="home"&&<section className="home-view">{TEST_MODE&&<div className="test-banner"><b>Modo pruebas activo</b><span>La Liga está abierta para probar todas las pantallas.</span></div>}{accessGranted&&<div className="test-banner"><b>Acceso privado</b><span>8128 activo en este dispositivo</span><button onClick={lockAccess}>Cerrar</button></div>}<p className={`sync-pill ${syncStatus}`}>{syncStatus==="online"?"Supabase sincronizado":syncStatus==="connecting"?"Conectando Supabase":syncStatus==="local"?"Modo local temporal":"Revisar conexión"}</p><p className="eyebrow">ENTRENADOR/A · {active.name.toUpperCase()}</p><div className="profile-hero"><div className={`orb ${chosenEvolution?.type.toLowerCase()??""}`}><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${companionImage}.png`} alt={evolved}/></div><div><p className="muted">COMPAÑERO</p><h1>{evolved}</h1><p className="subline">Nivel {active.level} · {evolved==="Eevee"?`afinidad ${chosenEvolution?.type}`:`tipo ${chosenEvolution?.type}`}</p></div></div><div className="status-grid"><article className="status-card wide"><div><span>NIVEL {active.level}</span><strong>{active.xp%100}%</strong></div><div className="meter"><i style={{width:`${active.xp%100}%`}}/></div><small>{evolved==="Eevee"?"Evoluciona tras 4 capturas":"Progreso de entrenador"}</small></article><article className="status-card"><span>ENERGÍA</span><strong>{active.energy}%</strong><div className="meter energy"><i style={{width:`${active.energy}%`}}/></div></article><article className="status-card"><span>TOKENS</span><strong>{active.tokens}</strong><small>para la barra</small></article></div><button className="scan-cta" onClick={()=>setScreen("scan")}><b>◉</b><span>Escanear QR</span><small>Ruta {complete}/12</small></button><div className="bottom-nav"><button onClick={()=>setScreen("home")}>●<span>Perfil</span></button><button onClick={()=>setScreen("pokedex")}>▦<span>Pokédex</span></button><button className="scan-nav" onClick={()=>setScreen("scan")}>⌁<span>Escanear</span></button><button onClick={()=>setScreen("route")}>☰<span>Ruta</span></button></div>{active.id==="alejandro"&&<button className="admin-shortcut" onClick={()=>setScreen("admin")}>Centro Pokémon · administración</button>}{message&&<p className="toast">{message}</p>}</section>}
     {visibleScreen==="pokedex"&&<section className="panel-view"><button className="back" onClick={()=>setScreen("home")}>← Volver</button><p className="eyebrow">TU POKÉDEX</p><h2>Capturas reales</h2><p className="lead">Cada victoria revela un Pokémon aleatorio. Puedes conservarlo o canjearlo por tokens en cualquier momento.</p><div className="capture-grid">{active.captures.length?active.captures.map((capture,index)=><article className={`dex-card ${capture.rarity.toLowerCase()}`} key={`${capture.id}-${index}`}><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${capture.sprite}.png`} alt={capture.name}/><span>#{String(capture.id).padStart(3,"0")} · {capture.rarity}</span><b>{capture.name}</b><button disabled={busyAction} onClick={()=>cashCapture(index)}>Canjear · +{capture.value} token{capture.value>1?"s":""}</button></article>):<div className="empty-dex"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/133.png" alt="Eevee"/><b>Aún no hay capturas</b><small>Escanea un QR de entrenador para empezar.</small></div>}</div>{message&&<p className="toast">{message}</p>}</section>}
     {visibleScreen==="scan"&&<section className="panel-view scan-view"><button className="back" onClick={()=>{closeCamera();setScreen("home");}}>← Volver</button><p className="eyebrow">ESCÁNER</p><h2>Encuentra un QR</h2><div className="camera-box">{cameraOpen?<video ref={videoRef} playsInline muted/>:<><span>⌁</span><b>Escanea un código</b><small>Usa la cámara trasera de tu móvil.</small></>}<button className="camera-button" onClick={cameraOpen?closeCamera:openCamera}>{cameraOpen?"Cerrar cámara":"Abrir cámara"}</button></div><p className="or">o introduce el código</p><div className="code-entry"><input value={manualCode} onChange={(e)=>setManualCode(e.target.value)} placeholder="Ej. trainer-1" autoCapitalize="none" autoCorrect="off"/><button onClick={()=>handleScannedValue(manualCode)}>Continuar</button></div><p className="hint">Ruta: trainer-1 a trainer-8 y rocket-1 a rocket-4. Final: alto-mando. Tarjetas: jugador-1 a jugador-14.</p>{message&&<p className="toast">{message}</p>}</section>}
     {visibleScreen==="route"&&<section className="panel-view"><button className="back" onClick={()=>setScreen("home")}>← Volver</button><p className="eyebrow">RUTA OBLIGATORIA · 12 QR</p><h2>Camino a Meseta Añil</h2><p className="lead">El mapa solo muestra tu progreso. Escanea el siguiente QR o introduce su código para combatir.</p><div className="route-track"><div className="route-start"><b>Salida</b><small>{active.name}</small></div>{journeyIds.map((id,index)=>{const item=stations.find((station)=>station.id===id)!;const done=active.route.includes(id);const previousDone=index===0||active.route.includes(journeyIds[index-1]);const available=previousDone&&!done;const arenaSoon=arenaStops.includes(id)&&!active.arenaEvents?.includes(id)&&!done;return <div key={id} className={`route-step ${item.kind} ${done?"complete":""} ${available?"available":""} ${arenaSoon?"arena-soon":""}`}><i>{done?"✓":item.kind==="rocket"?"R":String(index+1)}</i><span><b>{item.title}</b><small>{item.kind==="rocket"?"Team Rocket":item.area}</small></span><em>{done?"Hecho":arenaSoon?"Escanea":available?"Escanea":"Bloq."}</em></div>})}<div className={`elite-node ${finalUnlocked?"unlocked":""}`}><i>★</i><b>Meseta Añil</b><small>{finalUnlocked?"Escanea el QR final":"12/12 necesarios"}</small></div></div>{message&&<p className="toast">{message}</p>}</section>}
     {visibleScreen==="arena"&&<section className="panel-view arena-view"><button className="back" onClick={()=>{closeCamera();setPendingStation(null);setArenaStartedAt(null);setScreen("home")}}>← Volver</button><p className="eyebrow">✦ ARENA DE PAYÁ {pendingStation?"· ALERTA SORPRESA":"· RETO LIBRE"}</p><h2>{pendingStation?"Antes del QR...":"Reta a un entrenador"}</h2><p className="lead">{pendingStation?`Payá aparece antes de ${pendingStation.title}. Escanea la tarjeta del rival, elegid prueba y seleccionad ganador.`:"Escanea la tarjeta de tu contrincante, elegid el reto y registrad el resultado."}</p><div className="card-scanner"><span>▣</span><div><b>Tarjeta de entrenador rival</b><small>Escanea su QR o escribe el código del jugador.</small></div><button className="camera-button" onClick={cameraOpen?closeCamera:openCamera}>{cameraOpen?"Cerrar":"Escanear"}</button></div>{cameraOpen&&<div className="arena-camera"><video ref={videoRef} playsInline muted/></div>}<div className="code-entry"><input value={playerCardCode} onChange={(e)=>setPlayerCardCode(e.target.value)} placeholder="Ej. jugador-4"/><button onClick={()=>{void linkPlayerCard(playerCardCode);}}>Enlazar</button></div>{arenaOpponentPlayer&&<div className="arena-battle-stage"><article><b>{active.name}</b><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${companionImage}.png`} alt={evolved}/><small>{evolved}</small></article><div className="arena-clock"><span>VS</span><b>{arenaTimer}</b><small>10 minutos</small></div><article><b>{arenaOpponentPlayer.name}</b><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${arenaOpponentSprite}.png`} alt={arenaOpponentPlayer.evolution??"Eevee"}/><small>{arenaOpponentPlayer.evolution??"Eevee"}</small></article></div>}<div className="arena-cards">{arenaChallenges.map((challenge)=><button className={arenaChallenge===challenge?"chosen":""} key={challenge} onClick={()=>{setArenaChallenge(challenge);if(!arenaStartedAt)setArenaStartedAt(Date.now());}}>{challenge}<span>Ganador: +{REWARDS.arena} tokens · Perdedor: energía 0</span></button>)}</div>{arenaOpponentPlayer&&<div className="winner-picker"><b>¿Quién gana?</b><button className={arenaWinner===active.id?"chosen":""} onClick={()=>setArenaWinner(active.id)}>{active.name}</button><button className={arenaWinner===arenaOpponent?"chosen":""} onClick={()=>setArenaWinner(arenaOpponent)}>{arenaOpponentPlayer.name}</button></div>}<button className="arena-confirm" disabled={busyAction} onClick={beginArena}>{pendingStation?"Guardar ganador y combatir":"Guardar ganador de Arena"}</button>{message&&<p className="toast">{message}</p>}</section>}
-    {visibleScreen==="team"&&<section className="panel-view team-view"><button className="back" onClick={()=>{closeCamera();setPendingStation(null);setScreen("home")}}>← Volver</button><p className="eyebrow">R ENEMIGO · MISIÓN COOPERATIVA</p><h2>Team Rocket os espera</h2><p className="lead">Escanea la tarjeta QR de otra persona. Le llegará la invitación al abrir su tarjeta; si no está disponible, puede ayudarte desde fuera y tú completas el combate.</p><div className="rocket-banner"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/52.png" alt="Meowth"/><b>¡Preparad un equipo de dos!</b><span>Recomendado · no obligatorio</span></div><button className="camera-button team-camera-button" onClick={cameraOpen?closeCamera:openCamera}>{cameraOpen?"Cerrar cámara":"Escanear tarjeta"}</button>{cameraOpen&&<div className="arena-camera"><video ref={videoRef} playsInline muted/></div>}<div className="code-entry"><input value={playerCardCode} onChange={(e)=>setPlayerCardCode(e.target.value)} placeholder="Ej. jugador-6" autoCapitalize="none" autoCorrect="off"/><button disabled={busyAction} onClick={()=>handleScannedValue(playerCardCode)}>Enlazar</button></div>{teamMate&&<div className="opponent-found team-ok"><span>R</span><b>{active.name}</b><i>con</i><b>{players.find(p=>p.id===teamMate)?.name}</b></div>}<button className="arena-confirm" onClick={()=>{const go=pendingStation;setPendingStation(null);setScreen("home");if(go){setAnswer(null);setMessage("");setStation(go);}}}>{teamMate?"Entrar juntos en la guarida":"Jugar con ayuda externa"}</button>{message&&<p className="toast">{message}</p>}</section>}
+    {visibleScreen==="team"&&<section className="panel-view team-view">
+      <button className="back" onClick={()=>{closeCamera();setPendingStation(null);setScreen("home")}}>← Volver</button>
+      <p className="eyebrow">R ENEMIGO · MISIÓN COOPERATIVA</p>
+      <h2>Team Rocket os espera</h2>
+      <p className="lead">Escanea la tarjeta QR de otra persona. Le llegará una invitación en tiempo real. También puedes entrar en solitario.</p>
+      <div className="rocket-banner"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/52.png" alt="Meowth"/><b>¡Preparad un equipo de dos!</b><span>Cooperativo recomendado · solitario permitido</span></div>
+      <button className="camera-button team-camera-button" onClick={cameraOpen?closeCamera:openCamera}>{cameraOpen?"Cerrar cámara":"Escanear tarjeta"}</button>
+      {cameraOpen&&<div className="arena-camera"><video ref={videoRef} playsInline muted/></div>}
+      <div className="code-entry"><input value={playerCardCode} onChange={(e)=>setPlayerCardCode(e.target.value)} placeholder="Ej. jugador-6" autoCapitalize="none" autoCorrect="off"/><button disabled={busyAction} onClick={()=>handleScannedValue(playerCardCode)}>Invitar</button></div>
+      {teamMate&&<div className="opponent-found team-ok"><span>R</span><b>{active.name}</b><i>con</i><b>{players.find(p=>p.id===teamMate)?.name}</b></div>}
+      <button className="arena-confirm" disabled={busyAction} onClick={()=>{const go=pendingStation;setPendingStation(null);setScreen("home");if(go)void openBattle(go,true);}}>{teamMate?"Entrar juntos en la guarida":"Entrar en solitario"}</button>
+      {message&&<p className="toast">{message}</p>}
+    </section>}
+    {visibleScreen==="admin"&&<section className="panel-view admin-event-tools"><p className="eyebrow">CONTROL DEL EVENTO</p><h2>Comprobación y rescate</h2><label className="admin-reason"><span>Motivo del ajuste</span><input value={adminReason} onChange={(event)=>setAdminReason(event.target.value)} /></label><select className="large-select" value={adminTarget} onChange={(event)=>setAdminTarget(event.target.value)}>{players.map((player)=><option key={player.id} value={player.id}>{player.name}</option>)}</select><div className="rescue-actions"><button disabled={busyAction} onClick={()=>{void runAdminRecovery("heal");}}>Curar al 100%</button><button disabled={busyAction} onClick={()=>{void runAdminRecovery("tokens",2);}}>+2 tokens</button><button disabled={busyAction} onClick={()=>{void runAdminRecovery("tokens",-2);}}>-2 tokens</button><button disabled={busyAction} onClick={()=>{void runAdminRecovery("unstick");}}>Desbloquear encuentro</button></div><h3>Comprobador de QR</h3><div className="code-entry"><input value={qrCheckInput} onChange={(event)=>setQrCheckInput(event.target.value)} placeholder="Escanea o escribe un código" autoCapitalize="none" autoCorrect="off"/><button onClick={()=>verifyQrCode(qrCheckInput)}>Comprobar</button></div>{qrCheckResult&&<p className={`qr-check-result ${qrCheckResult.includes("correcto")||qrCheckResult.includes("correcta")?"ok":"error"}`}>{qrCheckResult}</p>}<div className="qr-manifest">{stations.map((item)=><span key={item.id}><b>{item.id}</b><small>{item.title}</small></span>)}<span><b>alto-mando</b><small>Final</small></span>{players.map((player)=><span key={player.id}><b>{player.id}</b><small>{player.name}</small></span>)}</div></section>}
+    {visibleScreen==="hall"&&<section className="panel-view hall-view"><button className="back" onClick={()=>setScreen("home")}>← Volver</button><p className="eyebrow">LIGA DE LA TERRAZA · REGISTRO OFICIAL</p><h2>Hall de la Fama</h2>{champions.length?<div className="champion-list">{champions.map((champion,index)=>{const evolution=eeveelutions.find((item)=>item.name===champion.evolution);return <article key={champion.id}><span>#{index+1}</span><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${evolution?.image??133}.png`} alt={champion.evolution??"Eevee"}/><div><b>{champion.name}</b><small>{champion.evolution??"Eevee"} · {champion.finalReward}</small></div></article>})}</div>:<div className="hall-empty"><b>El trono sigue vacío</b><span>El primer entrenador que supere el Alto Mando aparecerá aquí.</span></div>}<h3>Resumen de la Liga</h3><div className="league-summary"><article><span>Más capturas</span><b>{captureLeader?.name??"-"}</b><small>{captureLeader?.captures.length??0} Pokémon</small></article><article><span>Más Arenas</span><b>{arenaLeader?.name??"-"}</b><small>{(arenaLeader?.arenaHistory??[]).filter((match)=>match.winnerId===arenaLeader?.dbId).length} victorias</small></article><article><span>Captura más rara</span><b>{rarestCapture?.capture.name??"Aún ninguna"}</b><small>{rarestCapture?`${rarestCapture.player.name} · ${rarestCapture.capture.rarity}`:"Sigue explorando"}</small></article></div></section>}
     {visibleScreen==="admin-gate"&&<section className="gate-view admin-gate"><button className="back" onClick={()=>setScreen(isOpen?"home":"waiting")}>← Volver</button><div className="admin-lock" aria-hidden="true">27</div><p className="eyebrow">ZONA PRIVADA</p><h1>Centro Pokémon<br/>y Tienda</h1><p>Solo Alejandro puede acceder a las curas, tokens y canjes.</p><form className="access-card" onSubmit={(event)=>{event.preventDefault();unlockAdmin();}}><label htmlFor="admin-code">Código de administrador</label><div className="code-entry"><input id="admin-code" type="password" inputMode="numeric" autoComplete="off" value={adminCode} onChange={(event)=>setAdminCode(event.target.value)} placeholder="••••" autoFocus/><button type="submit">Entrar</button></div></form>{message&&<p className="toast">{message}</p>}</section>}
     {visibleScreen==="admin"&&<section className="panel-view admin-view"><button className="back" onClick={()=>{closeCamera();setScreen(isOpen?"home":"waiting")}}>← Salir de administración</button><p className="eyebrow">PANEL DE ALEJANDRO · DIRECCIÓN DE JUEGO</p><h2>Entrenadores</h2><p className="lead">Aquí puedes consultar y corregir la evolución elegida por cada persona antes de que se abra la Liga.</p><button className="cantina-shortcut" onClick={()=>document.getElementById("admin-cantina")?.scrollIntoView({behavior:"smooth"})}>Abrir escáner de Cantina</button><div className="admin-roster">{players.filter((player)=>player.id!=="alejandro").map((player)=>{const evo=eeveelutions.find((item)=>item.name===player.evolution);return <article key={player.id} className="roster-row"><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${evo?.image??"133"}.png`} alt={evo?.name??"Eevee"}/><div><b>{player.name}</b><small>{evo?`${evo.name} · ${evo.type}`:"Aún no ha elegido"}</small></div><select aria-label={`Evolución de ${player.name}`} value={player.evolution??""} onChange={(e)=>e.target.value&&setPlayerEvolution(player.id,e.target.value as Evolution)}><option value="">Sin elegir</option>{eeveelutions.map((item)=><option key={item.name} value={item.name}>{item.name}</option>)}</select></article>})}</div><h3 id="admin-cantina">Centro Pokémon y barra</h3><div className="admin-card-scanner"><div><b>Identificar tarjeta</b><small>La misma tarjeta sirve para Cantina, Arena y Centro Pokémon.</small></div><button className="camera-button" onClick={cameraOpen?closeCamera:openCamera}>{cameraOpen?"Cerrar cámara":"Escanear tarjeta"}</button></div>{cameraOpen&&<div className="arena-camera"><video ref={videoRef} playsInline muted/></div>}<div className="code-entry admin-code-entry"><input value={adminCardCode} onChange={(e)=>setAdminCardCode(e.target.value)} placeholder="Ej. jugador-6" autoCapitalize="none" autoCorrect="off"/><button onClick={()=>selectAdminPlayer(adminCardCode)}>Buscar</button></div><select className="large-select" value={adminTarget} onChange={(e)=>setAdminTarget(e.target.value)}>{players.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}</select><article className="admin-player"><div className="mini-orb">◒</div><div><b>{target.name}</b><small>{target.tokens} tokens · energía {target.energy}% · ruta {target.route.length}/12</small></div></article><div className="admin-actions"><label className="heal-price"><span>Precio cura</span><input type="number" min="0" value={healCost} onChange={(e)=>setHealCost(Number(e.target.value))}/></label><button disabled={busyAction} onClick={()=>{void heal();}}>Curar al 100%</button><button onClick={award}>Dar +{REWARDS.arena} por Arena</button></div><h3>Canjear en barra</h3><div className="menu-grid">{menu.map((item)=><button disabled={busyAction} key={item.label} onClick={()=>redeem(item)}><b>{item.label}</b><span>{item.cost} tokens</span></button>)}</div>{message&&<p className="toast">{message}</p>}</section>}
     {criticalAlert&&<div className="critical-alert-wrap" role="dialog" aria-modal="true" aria-labelledby="critical-alert-title"><section className={`critical-alert ${criticalAlert.kind}`}><div className="critical-alert-icon" aria-hidden="true">{criticalAlert.kind==="energy"?"HP":"T"}</div><p>{criticalAlert.kind==="energy"?"CENTRO POKÉMON":"CANTINA"}</p><h2 id="critical-alert-title">{criticalAlert.title}</h2><span>{criticalAlert.body}</span><button autoFocus onClick={()=>setCriticalAlert(null)}>Entendido</button></section></div>}
     {battleOutcome==="won"&&battleCapture&&<div className="capture-reveal-wrap" role="dialog" aria-modal="true" aria-labelledby="capture-title"><section className={`capture-reveal ${battleCapture.rarity.toLowerCase()}`}><p className="eyebrow">¡EL POKÉMON RIVAL SE HA DEBILITADO!</p><h2 id="capture-title">¡Has capturado a {battleCapture.name}!</h2><div className="capture-spotlight"><i aria-hidden="true"/><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${battleCapture.sprite}.png`} alt={battleCapture.name}/></div><div className="capture-values"><span>Victoria <b>+{battleReward} tokens</b></span><span>Valor del Pokémon <b>{battleCapture.value} token{battleCapture.value===1?"":"s"}</b></span></div><p>¿Quieres guardarlo en tu Pokédex o canjearlo ahora por su valor?</p><div className="capture-actions"><button disabled={busyAction} onClick={()=>{setMessage(`${battleCapture.name} guardado en tu Pokédex.`);finishBattleVictory();}}>Guardar</button><button disabled={busyAction} onClick={()=>{void redeemBattleCapture();}}>{busyAction?"Canjeando...":`Canjear +${battleCapture.value}`}</button></div></section></div>}
     {(rouletteSpinning||rouletteResult)&&<div className="modal-wrap"><section className="roulette-modal"><p className="eyebrow">RULETA SORPRESA</p><h2>{rouletteSpinning?"Girando...":"Premio"}</h2><div className={`roulette-wheel ${rouletteSpinning?"spinning":""}`}>{[["iPhone 17 Pro","/prizes/iphone.svg"],["Reloj inteligente","/prizes/watch.svg"],["Viaje sorpresa","/prizes/trip.svg"],["100 tokens","/prizes/tokens.svg"],["Prueba otra vez","/prizes/retry.svg"],["Chupito","/prizes/shot.svg"]].map(([label,image])=><span key={label}><img src={image} alt={label}/><em>{label}</em></span>)}</div><b>{rouletteResult||"¿Qué tocará?"}</b>{rouletteResult&&<button onClick={()=>{setRouletteResult("");setRouletteSpinning(false);}}>Cerrar</button>}</section></div>}
     {eliteActive&&isOpen&&<div className="modal-wrap elite-wrap"><section className={`elite-modal classic-battle ${eliteOutcome==="won"?"champion":eliteOutcome==="dead"?"fainted":""} ${playerHit?"damage-hit":""}`}>{eliteOutcome==="won"?<div className="champion-scene"><div className="champion-rays"><span/><span/><span/><span/></div><p className="eyebrow">NUEVO CAMPEÓN · 6 ACIERTOS</p><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${companionImage}.png`} alt={evolved}/><h2>¡{championName} gana la Liga de la Terraza!</h2><p>Has derrotado a los tres miembros del Alto Mando. Meseta Añil queda conquistada.</p><button onClick={()=>{setEliteActive(false);setEliteOutcome(null);setEliteAnswer(null);setScreen("home");}}>Celebrar</button></div>:<><div className="elite-progress">{eliteTrainers.map((trainer,index)=><i key={trainer.name} className={index<eliteTrainerIndex?"done":index===eliteTrainerIndex?"active":""}>{index+1}</i>)}</div><p className="eyebrow">{eliteTrainer.title.toUpperCase()} · COMBATE {eliteTrainerIndex+1}/3 · ACIERTO {(eliteIndex%2)+1}/2</p><div className="elite-battle-sequence" key={eliteTrainer.name}><div className="elite-trainer-entrance"><div><small>{eliteTrainer.title}</small><b>{eliteTrainer.name}</b><span>¡Adelante, {eliteTrainer.ace}!</span></div><img src={`https://play.pokemonshowdown.com/sprites/trainers/${eliteTrainer.trainer}.png`} alt={`Entrenador ${eliteTrainer.name}`}/><i className="elite-thrown-ball" aria-hidden="true"/></div><div className={`enemy-field elite-enemy-field ${eliteEnemyHp===0?"enemy-fainted":eliteTransitioning?"enemy-damaged":""}`}><div className="hp-card"><b>{eliteTrainer.ace.toUpperCase()} <small>Nv. {active.level+5+eliteTrainerIndex}</small></b><div className="battle-hp"><i style={{width:`${eliteEnemyHp}%`}}/></div><small>PS {eliteEnemyHp}/100</small></div><div className="elite-release"><span aria-hidden="true"/><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${eliteTrainer.image}.png`} alt={eliteTrainer.ace}/></div></div><div className="player-field elite-player-field"><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/back/${companionImage}.png`} alt={evolved}/><div className="hp-card"><b>{evolved.toUpperCase()} <small>Nv. {active.level}</small></b><div className="battle-hp player-hp"><i style={{width:`${active.energy}%`}}/></div><small>PS {active.energy}/100</small></div></div></div><p className="battle-copy">{message||`${eliteTrainer.name} te observa. Necesitas dos aciertos para debilitar a ${eliteTrainer.ace}.`}</p><p className="elite-counter">Aciertos totales: <b>{eliteIndex}/6</b></p><p className="question">{eliteQuestion.question}</p><div className="answers elite-answers">{eliteQuestion.options.map((option,index)=><button key={option} disabled={Boolean(eliteOutcome)||eliteTransitioning} className={eliteAnswer===index?"selected":""} onClick={()=>setEliteAnswer(index)}><span>{["Psíquico","Tierra Viva","Llamarada","Último recurso"][index]}</span>{option}</button>)}</div><button className="answer-cta" disabled={eliteAnswer===null||Boolean(eliteOutcome)||eliteTransitioning} onClick={resolveEliteBattle}>{eliteTransitioning?"Atacando...":eliteOutcome==="dead"?"Debilitado":eliteIndex===5?"Ataque final":"Atacar"}</button>{eliteOutcome==="dead"&&<div className="result"><p>¡{evolved} se ha debilitado!</p><button onClick={()=>{setEliteActive(false);setEliteOutcome(null);setEliteAnswer(null);setMessage("Busca a Alejandro en el Centro Pokémon para recuperar vida.");setScreen("home");}}>Ir al Centro Pokémon</button></div>}</>}</section></div>}
-    {station&&battleQuestion&&isOpen&&<div className="modal-wrap"><section className={`battle-modal classic-battle ${battleOutcome==="dead"?"fainted":battleOutcome==="won"?"victory":""}`}><button className="close" onClick={()=>{if(!battleOutcome){setMessage("El combate no se puede cerrar: acierta o cae debilitado.");return;}setStation(null);setBattleQuestion(null);setBattleOutcome(null);}}>×</button><p className="eyebrow">{station.kind==="rocket"?"¡TEAM ROCKET QUIERE LUCHAR!":"¡UN ENTRENADOR TE DESAFÍA!"}</p><div className="enemy-field"><div className="hp-card"><b>{station.kind==="rocket"?"MEOWTH":"RIVAL"} <small>Nv. {difficulty+3}</small></b><div className="battle-hp"><i/></div></div><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${station.kind==="rocket"?52:25}.png`} alt="Pokémon rival"/></div><div className="player-field"><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/back/${companionImage}.png`} alt={evolved}/><div className="hp-card"><b>{evolved.toUpperCase()} <small>Nv. {active.level}</small></b><div className="battle-hp player-hp"><i style={{width:`${active.energy}%`}}/></div></div></div><p className="battle-copy">{message||`${evolved}, ¿qué harás?`}</p><p className="question">{battleQuestion.question}</p><div className="answers">{battleQuestion.options.map((option,index)=><button key={option} disabled={Boolean(battleOutcome)} className={answer===index?"selected":""} onClick={()=>setAnswer(index)}><span>{["Impactrueno","Ataque rápido","Mordisco","Poder oculto"][index]}</span>{option}</button>)}</div><button className="answer-cta" disabled={answer===null||Boolean(battleOutcome)||busyAction} onClick={resolveBattle}>{busyAction?"Registrando...":battleOutcome==="won"?"Victoria":battleOutcome==="dead"?"Debilitado":battleQuestion.category==="trick"?"Pregunta trampa":"Pregunta general"}</button>{battleOutcome&&<div className="result"><button onClick={()=>{const evolveNow=battleOutcome==="won"&&active.route.length===4&&Boolean(active.evolution)&&!active.evolvedShown;setStation(null);setBattleQuestion(null);setBattleOutcome(null);setMessage(battleOutcome==="dead"?"Busca a Alejandro en el Centro Pokémon para recuperar vida.":"");setScreen(evolveNow?"evolution":"home");}}>Continuar</button></div>}</section></div>}
+    {eliteOutcome==="won"&&active.finalReward&&<div className="champion-reward-banner"><span>RECOMPENSA BBQ</span><b>{active.finalReward}</b></div>}
+    {station&&battleQuestion&&battlePresentation&&isOpen&&<div className="modal-wrap"><section className={`battle-modal classic-battle gym-${station.color} ${battleOutcome==="dead"?"fainted":battleOutcome==="won"?"victory":""}`}>
+      <button className="close" onClick={()=>{if(!battleOutcome){setMessage("El combate no se puede cerrar: acierta o cae debilitado.");return;}setStation(null);setBattleQuestion(null);setBattleOutcome(null);}}>×</button>
+      <p className="eyebrow">{station.kind==="rocket"?"¡TEAM ROCKET QUIERE LUCHAR!":station.area.toUpperCase()}</p>
+      <div className="gym-intro"><div><b>{station.title}</b><span>{battlePresentation.intro}</span></div><img src={`https://play.pokemonshowdown.com/sprites/trainers/${battlePresentation.trainer}.png`} alt={`Entrenador de ${station.title}`}/></div>
+      <div className="enemy-field"><div className="hp-card"><b>RIVAL <small>Nv. {difficulty+3}</small></b><div className="battle-hp"><i/></div></div><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${battlePresentation.rival}.png`} alt="Pokémon rival"/></div>
+      <div className="player-field"><img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/back/${companionImage}.png`} alt={evolved}/><div className="hp-card"><b>{evolved.toUpperCase()} <small>Nv. {active.level}</small></b><div className="battle-hp player-hp"><i style={{width:`${active.energy}%`}}/></div></div></div>
+      {correctStreak>=2&&<div className="streak-banner">RACHA ×{correctStreak}</div>}
+      <p className="battle-copy">{message||`${evolved}, ¿qué harás?`}</p><p className="question">{battleQuestion.question}</p>
+      <div className="answers">{battleQuestion.options.map((option,index)=><button key={option} disabled={Boolean(battleOutcome)} className={answer===index?"selected":""} onClick={()=>setAnswer(index)}><span>{["Impactrueno","Ataque rápido","Mordisco","Poder oculto"][index]}</span>{option}</button>)}</div>
+      <button className="answer-cta" disabled={answer===null||Boolean(battleOutcome)||busyAction} onClick={resolveBattle}>{busyAction?"Registrando...":battleOutcome==="won"?"Victoria":battleOutcome==="dead"?"Debilitado":battleQuestion.category==="trick"?"Pregunta trampa":"Pregunta general"}</button>
+      {battleOutcome&&<div className="result"><button onClick={()=>{const evolveNow=battleOutcome==="won"&&active.route.length===4&&Boolean(active.evolution)&&!active.evolvedShown;setStation(null);setBattleQuestion(null);setBattleOutcome(null);setMessage(battleOutcome==="dead"?"Busca a Alejandro en el Centro Pokémon para recuperar vida.":"");setScreen(evolveNow?"evolution":"home");}}>Continuar</button></div>}
+    </section></div>}
   </main>;
 }

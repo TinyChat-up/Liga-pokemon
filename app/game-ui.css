@@ -1976,3 +1976,195 @@ select:focus-visible {
   .evolution-dialogue,
   .evolution-scene > button { opacity: 1; }
 }
+
+/* Event progression, invitations and Hall of Fame */
+.loading-game {
+  display: grid;
+  place-items: center;
+  min-height: 100svh;
+  padding: 20px;
+}
+.loading-game section { width: 100%; max-width: 340px; min-width: 0; text-align: center; }
+.loading-game .ball-mark { display: grid; place-items: center; width: 74px; height: 74px; margin: 0 auto 18px; border: 4px solid #17213b; border-radius: 50%; background: #e84545; color: #fff; font-size: 40px; box-shadow: 0 7px 0 rgba(23, 33, 59, 0.2); }
+.loading-game h1 { max-width: 100%; margin: 7px 0 18px; overflow-wrap: anywhere; font-size: 24px; letter-spacing: 0; }
+.loading-game small { color: #52617b; font-weight: 800; }
+.loading-track { height: 14px; margin-bottom: 10px; overflow: hidden; border: 3px solid #17213b; border-radius: 5px; background: #fff; }
+.loading-track i { display: block; width: 45%; height: 100%; background: #4c7ec7; animation: loading-route 1.2s ease-in-out infinite alternate; }
+
+.invite-alert,
+.progress-extras,
+.admin-event-tools {
+  width: min(520px, calc(100% - 24px));
+  margin: 12px auto;
+}
+
+.invite-alert {
+  display: grid;
+  grid-template-columns: 46px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  border: 3px solid #17213b;
+  border-radius: 8px;
+  background: #fff4f4;
+  box-shadow: 0 5px 0 rgba(23, 33, 59, 0.2);
+}
+
+.invite-alert > span {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #d83e48;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 1000;
+}
+
+.invite-alert div { display: grid; gap: 3px; }
+.invite-alert small { color: #52617b; font-weight: 750; }
+.invite-alert button { min-height: 38px; border: 2px solid #17213b; border-radius: 6px; background: #fff; font-weight: 900; }
+.invite-alert button:last-child { grid-column: 3; font-size: 10px; }
+
+.progress-extras {
+  display: grid;
+  gap: 8px;
+}
+
+.achievement-strip,
+.badge-strip {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.achievement-strip > b,
+.achievement-strip span,
+.badge-strip b {
+  flex: 0 0 auto;
+  padding: 8px 9px;
+  border: 2px solid #17213b;
+  border-radius: 6px;
+  background: #edf0f5;
+  color: #657087;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.achievement-strip > b { background: #17213b; color: #fff; }
+.achievement-strip span.unlocked { background: #ffdf57; color: #17213b; }
+.badge-strip b { background: #d9f4df; color: #26764c; }
+.hall-shortcut { min-height: 44px; border: 3px solid #17213b; border-radius: 7px; background: #fff3ba; color: #17213b; font-weight: 950; }
+
+.hall-view { padding-bottom: 32px; }
+.hall-view h2 { margin-bottom: 18px; }
+.champion-list { display: grid; gap: 10px; }
+.champion-list article {
+  display: grid;
+  grid-template-columns: 34px 74px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-height: 88px;
+  border-bottom: 3px solid #17213b;
+  background: #fffdf5;
+}
+.champion-list article > span { color: #d33c3c; font-size: 20px; font-weight: 1000; }
+.champion-list img { width: 72px; height: 72px; object-fit: contain; }
+.champion-list div { display: grid; gap: 4px; }
+.champion-list b { font-size: 17px; }
+.champion-list small { color: #52617b; font-weight: 800; line-height: 1.35; }
+.hall-empty { display: grid; gap: 5px; padding: 24px 12px; border-block: 3px solid #17213b; text-align: center; }
+.hall-empty b { font-size: 19px; }
+.hall-empty span { color: #52617b; font-weight: 750; }
+.league-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.league-summary article { min-width: 0; padding: 10px 7px; border: 2px solid #17213b; border-radius: 6px; background: #fff; text-align: center; }
+.league-summary span, .league-summary b, .league-summary small { display: block; overflow-wrap: anywhere; }
+.league-summary span { color: #66728a; font-size: 8px; font-weight: 900; text-transform: uppercase; }
+.league-summary b { margin: 5px 0; font-size: 12px; }
+.league-summary small { color: #26764c; font-size: 9px; font-weight: 800; }
+
+/* Event control */
+.admin-event-tools { padding-bottom: 18px; border-bottom: 4px solid #17213b; }
+.admin-reason { display: grid; gap: 5px; margin: 10px 0; color: #52617b; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+.admin-reason input { min-height: 44px; padding: 10px; border: 2px solid #17213b; border-radius: 6px; background: #fff; color: #17213b; font-weight: 750; }
+.rescue-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 10px 0 22px; }
+.rescue-actions button { min-height: 46px; border: 2px solid #17213b; border-radius: 6px; background: #fff; color: #17213b; font-weight: 900; }
+.rescue-actions button:first-child { background: #d9f4df; }
+.rescue-actions button:last-child { background: #fff3ba; }
+.qr-check-result { padding: 10px; border: 2px solid #17213b; border-radius: 6px; font-weight: 900; }
+.qr-check-result.ok { background: #d9f4df; color: #26764c; }
+.qr-check-result.error { background: #fff0f0; color: #b62f39; }
+.qr-manifest { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; max-height: 280px; margin-top: 10px; overflow-y: auto; }
+.qr-manifest span { display: grid; padding: 7px; border-left: 4px solid #4c7ec7; background: #fff; }
+.qr-manifest b { font-size: 10px; }
+.qr-manifest small { color: #66728a; font-size: 8px; font-weight: 750; }
+
+/* Distinct gym entrances and combo feedback */
+.gym-intro {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  align-items: end;
+  min-height: 104px;
+  margin: 4px 0 8px;
+  padding: 12px 10px 0;
+  overflow: hidden;
+  border: 3px solid #17213b;
+  border-radius: 7px;
+  background: #d9f4df;
+}
+.gym-intro div { align-self: center; display: grid; gap: 5px; }
+.gym-intro b { font-size: 15px; }
+.gym-intro span { font-size: 10px; font-weight: 800; line-height: 1.35; }
+.gym-intro img { width: 96px; height: 104px; object-fit: contain; object-position: bottom; animation: gym-trainer-enter 500ms ease-out both; }
+.gym-violet .gym-intro { background: #eadfff; }
+.gym-orange .gym-intro { background: #ffe4bd; }
+.gym-mint .gym-intro { background: #d5f4df; }
+.gym-blue .gym-intro { background: #dbeafe; }
+.gym-pink .gym-intro { background: #ffe0ec; }
+.gym-yellow .gym-intro { background: #fff3ba; }
+.gym-red .gym-intro { background: #ffe0e0; }
+.streak-banner { width: fit-content; margin: -4px auto 7px; padding: 5px 10px; border: 2px solid #17213b; border-radius: 6px; background: #ffdf57; font-size: 11px; font-weight: 1000; animation: streak-pop 340ms ease-out both; }
+
+.capture-reveal.especial .capture-spotlight,
+.capture-reveal.legendario .capture-spotlight { animation: rare-encounter-pulse 1.4s ease-in-out infinite; }
+.capture-reveal.legendario { box-shadow: 0 0 0 6px #ffdf57, 0 0 42px rgba(255, 223, 87, 0.85); }
+.capture-reveal.legendario::before { display: block; margin-bottom: 4px; color: #9a6416; content: "ENCUENTRO ULTRARRARO"; font-size: 10px; font-weight: 1000; }
+
+.champion-reward-banner {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  z-index: 95;
+  display: grid;
+  gap: 3px;
+  width: min(420px, calc(100% - 36px));
+  margin: auto;
+  padding: 11px;
+  border: 3px solid #17213b;
+  border-radius: 7px;
+  background: #ffdf57;
+  color: #17213b;
+  text-align: center;
+  box-shadow: 0 6px 0 rgba(23, 33, 59, 0.3);
+}
+.champion-reward-banner span { font-size: 9px; font-weight: 1000; }
+.champion-reward-banner b { font-size: 16px; }
+
+@keyframes gym-trainer-enter { from { opacity: 0; transform: translateX(34px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes streak-pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+@keyframes rare-encounter-pulse { 50% { transform: scale(1.05); filter: brightness(1.18); } }
+@keyframes loading-route { from { transform: translateX(-90%); } to { transform: translateX(210%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gym-intro img,
+  .streak-banner,
+  .capture-reveal.especial .capture-spotlight,
+  .capture-reveal.legendario .capture-spotlight { animation: none !important; }
+  .loading-track i { width: 100%; animation: none !important; }
+}

@@ -35,6 +35,10 @@ export type Player = {
   arenaHistory?: ArenaMatchSummary[];
   redemptions?: RedemptionSummary[];
   evolvedShown?: boolean;
+  correctAnswers?: number;
+  wrongAnswers?: number;
+  finalReward?: string;
+  finalCompletedAt?: string | null;
 };
 
 export type StationKind = "trainer" | "rocket";
@@ -81,6 +85,22 @@ export type Eeveelution = {
   image: string;
 };
 
+export type Achievement = {
+  id: string;
+  title: string;
+  description: string;
+  unlocked: boolean;
+};
+
+export type TeamInviteSummary = {
+  id: string;
+  fromPlayerId: string;
+  toPlayerId: string;
+  stationId?: string | null;
+  status: "pending" | "accepted" | "declined" | "cancelled";
+  createdAt?: string | null;
+};
+
 export type MenuItem = {
   label: string;
   cost: number;
@@ -97,5 +117,6 @@ export type GameScreen =
   | "scan"
   | "arena"
   | "team"
+  | "hall"
   | "admin-gate"
   | "admin";

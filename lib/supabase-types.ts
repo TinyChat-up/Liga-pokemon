@@ -180,6 +180,42 @@ export type Database = {
         };
         Relationships: [];
       };
+      final_rewards: {
+        Row: {
+          id: string;
+          player_id: string;
+          reward_name: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          player_id: string;
+          reward_name: string;
+          completed_at?: string | null;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      admin_adjustments: {
+        Row: {
+          id: string;
+          player_id: string;
+          action: string;
+          reason: string;
+          token_delta: number;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          player_id: string;
+          action: string;
+          reason: string;
+          token_delta?: number;
+          created_at?: string | null;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -222,6 +258,35 @@ export type Database = {
           p_winner_player_id: string;
           p_loser_player_id: string;
           p_reward_tokens: number;
+        };
+        Returns: Json;
+      };
+      complete_elite_four: {
+        Args: {
+          p_player_id: string;
+          p_reward_name: string;
+        };
+        Returns: Json;
+      };
+      admin_recover_player: {
+        Args: {
+          p_admin_code: string;
+          p_player_id: string;
+          p_action: string;
+          p_reason: string;
+          p_token_delta: number;
+          p_station_id: string | null;
+        };
+        Returns: Json;
+      };
+      complete_team_station: {
+        Args: {
+          p_player_one_id: string;
+          p_player_two_id: string;
+          p_station_id: string;
+          p_reward_tokens: number;
+          p_player_one_capture: Json;
+          p_player_two_capture: Json;
         };
         Returns: Json;
       };

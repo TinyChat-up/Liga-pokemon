@@ -1,18 +1,19 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaultPlayers } from "./data";
-import type { ArenaMatchSummary, Capture, Evolution, Player, RedemptionSummary } from "./types";
+import type { ArenaMatchSummary, Capture, Evolution, Player, RedemptionSummary, TeamInviteSummary } from "./types";
 import type { Database } from "../supabase-types";
 
 type Client = SupabaseClient<Database>;
 
-type GameSnapshot = {
+export type GameSnapshot = {
   players: Player[];
+  teamInvites: TeamInviteSummary[];
   mode: "remote" | "local";
 };
 
 export async function loadGameSnapshot(client: Client | null): Promise<GameSnapshot> {
-  if (!client) return { players: defaultPlayers, mode: "local" };
+  if (!client) return { players: defaultPlayers, teamInvites: [], mode: "local" };
 
   const [profilesResult, progressResult, capturesResult, arenaResult, redemptionsResult] = await Promise.all([
     client.from("profiles").select("*"),
@@ -21,7 +22,11 @@ export async function loadGameSnapshot(client: Client | null): Promise<GameSnaps
     client.from("arena_matches").select("*"),
     client.from("redemptions").select("*"),
   ]);
-  const questionHistoryResult = await client.from("question_history").select("player_id,question_key");
+  const questionHistoryResult = await client.from("question_history").select("player_id,question_key,is_correct");
+  const [teamInvitesResult, finalRewardsResult] = await Promise.all([
+    client.from("team_invites").select("*"),
+    client.from("final_rewards").select("*"),
+  ]);
 
   if (profilesResult.error) {
     throw new Error(profilesResult.error.message);
@@ -35,12 +40,19 @@ export async function loadGameSnapshot(client: Client | null): Promise<GameSnaps
   if (questionHistoryResult.error) {
     throw new Error(questionHistoryResult.error.message);
   }
+  if (teamInvitesResult.error) {
+    throw new Error(teamInvitesResult.error.message);
+  }
+  if (finalRewardsResult.error && !isMissingRelationError(finalRewardsResult.error)) {
+    throw new Error(finalRewardsResult.error.message);
+  }
 
   const progress = progressResult.data ?? [];
   const captures = capturesResult.data ?? [];
   const arenaMatches = arenaResult.data ?? [];
   const redemptions = redemptionsResult.data ?? [];
   const questionHistory = questionHistoryResult.data ?? [];
+  const finalRewards = finalRewardsResult.data ?? [];
   const remotePlayers = (profilesResult.data ?? []).map<Player>((row) => ({
     id: row.player_code,
     dbId: row.id,
@@ -89,12 +101,93 @@ export async function loadGameSnapshot(client: Client | null): Promise<GameSnaps
     questionHistory: unique(
       questionHistory.filter((item) => item.player_id === row.id).map((item) => item.question_key),
     ),
+    correctAnswers: questionHistory.filter((item) => item.player_id === row.id && item.is_correct === true).length,
+    wrongAnswers: questionHistory.filter((item) => item.player_id === row.id && item.is_correct === false).length,
+    finalReward: finalRewards.find((item) => item.player_id === row.id)?.reward_name,
+    finalCompletedAt: finalRewards.find((item) => item.player_id === row.id)?.completed_at,
   }));
 
   return {
     players: defaultPlayers.map((seed) => remotePlayers.find((item) => item.id === seed.id) ?? seed),
+    teamInvites: (teamInvitesResult.data ?? []).map((invite) => ({
+      id: invite.id,
+      fromPlayerId: invite.from_player_id,
+      toPlayerId: invite.to_player_id,
+      stationId: invite.station_id,
+      status: invite.status,
+      createdAt: invite.created_at,
+    })),
     mode: "remote",
   };
+}
+
+export async function completeEliteFourRemotely(
+  client: Client | null,
+  player: Player,
+  rewardName: string,
+): Promise<{ awarded: boolean; reward: string }> {
+  if (!client || !player.dbId) return { awarded: !player.finalReward, reward: player.finalReward ?? rewardName };
+
+  const rpc = await client.rpc("complete_elite_four", {
+    p_player_id: player.dbId,
+    p_reward_name: rewardName,
+  });
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    if (isFinalResult(rpc.data)) return rpc.data;
+    return { awarded: true, reward: rewardName };
+  }
+
+  const { data, error } = await client
+    .from("final_rewards")
+    .upsert({ player_id: player.dbId, reward_name: rewardName }, { onConflict: "player_id", ignoreDuplicates: true })
+    .select("reward_name")
+    .maybeSingle();
+  if (error) {
+    if (isMissingRelationError(error)) return { awarded: !player.finalReward, reward: player.finalReward ?? rewardName };
+    throw new Error(error.message);
+  }
+  return { awarded: Boolean(data), reward: data?.reward_name ?? player.finalReward ?? rewardName };
+}
+
+export async function respondToTeamInvite(
+  client: Client | null,
+  inviteId: string,
+  status: "accepted" | "declined",
+): Promise<void> {
+  if (!client) return;
+  const { error } = await client.from("team_invites").update({ status }).eq("id", inviteId).eq("status", "pending");
+  if (error) throw new Error(error.message);
+}
+
+export async function recoverPlayerRemotely(
+  client: Client | null,
+  player: Player,
+  action: "heal" | "tokens" | "unstick",
+  reason: string,
+  tokenDelta = 0,
+  stationId: string | null = null,
+): Promise<void> {
+  if (!client || !player.dbId) return;
+  const rpc = await client.rpc("admin_recover_player", {
+    p_admin_code: "8128",
+    p_player_id: player.dbId,
+    p_action: action,
+    p_reason: reason,
+    p_token_delta: tokenDelta,
+    p_station_id: stationId,
+  });
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    return;
+  }
+
+  if (action === "heal") await saveProfile(client, { ...player, energy: 100 });
+  if (action === "tokens") await saveProfile(client, { ...player, tokens: Math.max(0, player.tokens + tokenDelta) });
+  if (action === "unstick") {
+    await client.from("team_invites").update({ status: "cancelled" }).eq("status", "pending").or(`from_player_id.eq.${player.dbId},to_player_id.eq.${player.dbId}`);
+    if (stationId) await client.from("question_history").delete().eq("player_id", player.dbId).eq("station_id", stationId);
+  }
 }
 
 export async function saveProfile(client: Client | null, player: Player): Promise<void> {
@@ -227,6 +320,37 @@ export async function completeStationRemotely(
     );
 
   if (captureResult.error) throw new Error(captureResult.error.message);
+}
+
+export async function completeTeamStationRemotely(
+  client: Client | null,
+  playerOne: Player,
+  playerTwo: Player,
+  stationId: string,
+  rewardTokens: number,
+  playerOneCapture: Capture,
+  playerTwoCapture: Capture,
+): Promise<void> {
+  if (!playerOneCapture.recordId || !playerTwoCapture.recordId) return;
+  if (!client || !playerOne.dbId || !playerTwo.dbId) return;
+
+  const rpc = await client.rpc("complete_team_station", {
+    p_player_one_id: playerOne.dbId,
+    p_player_two_id: playerTwo.dbId,
+    p_station_id: stationId,
+    p_reward_tokens: rewardTokens,
+    p_player_one_capture: capturePayload(playerOneCapture),
+    p_player_two_capture: capturePayload(playerTwoCapture),
+  });
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    return;
+  }
+
+  const playerOneXp = playerOne.xp + 25;
+  const playerTwoXp = playerTwo.xp + 25;
+  await completeStationRemotely(client, playerOne, stationId, rewardTokens, playerOneCapture, playerOneXp, Math.floor(playerOneXp / 100) + 1);
+  await completeStationRemotely(client, playerTwo, stationId, rewardTokens, playerTwoCapture, playerTwoXp, Math.floor(playerTwoXp / 100) + 1);
 }
 
 export async function redeemCaptureRemotely(
@@ -434,6 +558,17 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+function capturePayload(capture: Capture): Database["public"]["Functions"]["complete_team_station"]["Args"]["p_player_one_capture"] {
+  return {
+    id: capture.recordId!,
+    pokemon_id: capture.id,
+    pokemon_name: capture.name,
+    rarity: capture.rarity,
+    sprite_id: capture.sprite,
+    token_value: capture.value,
+  };
+}
+
 function isMissingRpcError(error: { message?: string; code?: string } | null): boolean {
   if (!error) return false;
   return error.code === "PGRST202" || Boolean(error.message?.toLowerCase().includes("could not find the function"));
@@ -441,6 +576,18 @@ function isMissingRpcError(error: { message?: string; code?: string } | null): b
 
 function isAwardResult(value: unknown): value is { awarded: boolean } {
   return Boolean(value && typeof value === "object" && "awarded" in value);
+}
+
+function isFinalResult(value: unknown): value is { awarded: boolean; reward: string } {
+  return Boolean(
+    value && typeof value === "object" && "awarded" in value && "reward" in value,
+  );
+}
+
+function isMissingRelationError(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false;
+  const message = error.message?.toLowerCase() ?? "";
+  return error.code === "42P01" || error.code === "PGRST205" || message.includes("final_rewards");
 }
 
 function isSchemaMismatchError(error: { message?: string; code?: string } | null): boolean {
