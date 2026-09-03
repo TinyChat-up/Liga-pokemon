@@ -15,6 +15,7 @@ type DeliveryQr = {
 
 type Delivery = {
   gameCode: string;
+  masterPassword: string;
   playerUrl: string;
   masterUrl: string;
   routeQrs: DeliveryQr[];
@@ -47,7 +48,7 @@ export function GameDelivery() {
       .then(async (response) => {
         const data = (await response.json()) as Partial<Delivery> & { error?: string };
         if (!response.ok || data.error) throw new Error(data.error ?? "No se pudo preparar tu partida.");
-        if (!data.gameCode || !data.playerUrl || !data.masterUrl || !data.routeQrs || !data.finalQr || !data.arenaQr) {
+        if (!data.gameCode || !data.masterPassword || !data.playerUrl || !data.masterUrl || !data.routeQrs || !data.finalQr || !data.arenaQr) {
           throw new Error("La entrega no contiene todos los datos de la partida.");
         }
         setDelivery(data as Delivery);
@@ -90,7 +91,8 @@ export function GameDelivery() {
         [
           "QR Quest Party",
           "",
-          `Codigo master: ${delivery.gameCode}`,
+          `Usuario master: ${delivery.gameCode}`,
+          `Contrasena master: ${delivery.masterPassword}`,
           `Enlace master: ${delivery.masterUrl}`,
           `Enlace jugadores: ${delivery.playerUrl}`,
           "",
@@ -220,14 +222,15 @@ export function GameDelivery() {
   return (
     <section className="delivery-panel">
       <article className="master-code-card">
-        <span>Código solo master</span>
+        <span>Acceso privado del master</span>
         <b>{delivery.gameCode}</b>
-        <small>Guárdalo. El enlace master reclama la gestión de esta partida en tu dispositivo.</small>
+        <small>Usuario master. Necesitarás también la contraseña para entrar desde cualquier dispositivo.</small>
+        <code className="master-password-value">{delivery.masterPassword}</code>
       </article>
 
       <div className="delivery-actions">
         <a className="buy-button" href={delivery.masterUrl}>
-          Abrir como master
+          Iniciar sesión master
         </a>
         <a className="store-secondary" href={whatsappUrl} target="_blank" rel="noreferrer">
           Enviar link por WhatsApp
@@ -237,6 +240,9 @@ export function GameDelivery() {
         </button>
         <button type="button" className="store-secondary" onClick={() => copy(delivery.masterUrl, "Link master")}>
           Copiar link master
+        </button>
+        <button type="button" className="store-secondary" onClick={() => copy(delivery.masterPassword, "Contraseña master")}>
+          Copiar contraseña master
         </button>
         <button type="button" className="buy-button" disabled={downloading} onClick={downloadPdfKit}>
           {downloading ? "Preparando PDF..." : "Descargar PDF de ruta"}

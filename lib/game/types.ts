@@ -114,6 +114,7 @@ export type GameScreen =
   | "evolution"
   | "home"
   | "pokedex"
+  | "bag"
   | "scan"
   | "arena"
   | "team"

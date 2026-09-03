@@ -1,7 +1,7 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createDefaultPlayer, defaultPlayers } from "./data";
-import type { ArenaMatchSummary, Capture, Evolution, Player, RedemptionSummary, TeamInviteSummary } from "./types";
+import type { ArenaMatchSummary, Capture, Evolution, MenuItem, Player, RedemptionSummary, TeamInviteSummary } from "./types";
 import type { Database } from "../supabase-types";
 
 type Client = SupabaseClient<Database>;
@@ -13,6 +13,13 @@ type RedemptionRow = Database["public"]["Tables"]["redemptions"]["Row"];
 type QuestionHistoryRow = Database["public"]["Tables"]["question_history"]["Row"];
 type TeamInviteRow = Database["public"]["Tables"]["team_invites"]["Row"];
 type FinalRewardRow = Database["public"]["Tables"]["final_rewards"]["Row"];
+export type GameSettings = {
+  title: string;
+  healingCost: number;
+  wildDelaySeconds: number;
+  rewardMenu: MenuItem[];
+  finalRewards: string[];
+};
 type SnapshotRows = {
   profiles: ProfileRow[];
   game_progress: ProgressRow[];
@@ -164,6 +171,42 @@ export async function loadGameSnapshot(client: Client | null, gameCode: string):
     })),
     mode: "remote",
   };
+}
+
+export async function loadGameSettingsRemotely(client: Client | null, gameCode: string): Promise<GameSettings | null> {
+  if (!client || !gameCode) return null;
+  const { data, error } = await client.rpc("get_game_settings", { p_game_code: gameCode });
+  if (error) {
+    if (isMissingRpcError(error)) return null;
+    throw new Error(error.message);
+  }
+  if (!isRecord(data)) return null;
+  return {
+    title: typeof data.title === "string" ? data.title : "QR Quest",
+    healingCost: typeof data.healingCost === "number" ? data.healingCost : 0,
+    wildDelaySeconds: typeof data.wildDelaySeconds === "number" ? data.wildDelaySeconds : 240,
+    rewardMenu: Array.isArray(data.rewardMenu) ? data.rewardMenu.filter(isMenuItem) : [],
+    finalRewards: Array.isArray(data.finalRewards) ? data.finalRewards.filter((item): item is string => typeof item === "string") : [],
+  };
+}
+
+export async function updateGameSettingsRemotely(
+  client: Client | null,
+  gameCode: string,
+  masterToken: string,
+  settings: GameSettings,
+): Promise<void> {
+  if (!client) return;
+  const { error } = await client.rpc("update_game_settings", {
+    p_game_code: gameCode,
+    p_master_token: masterToken,
+    p_public_title: settings.title,
+    p_healing_cost: settings.healingCost,
+    p_wild_delay_seconds: settings.wildDelaySeconds,
+    p_reward_menu: settings.rewardMenu,
+    p_final_rewards: settings.finalRewards,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export async function createPlayerProfile(
@@ -843,6 +886,10 @@ function isProfileRow(value: unknown): value is ProfileRow {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isMenuItem(value: unknown): value is MenuItem {
+  return isRecord(value) && typeof value.label === "string" && typeof value.cost === "number" && value.cost >= 0;
 }
 
 function unique(values: string[]): string[] {

@@ -110,7 +110,7 @@ export async function GET(request: Request) {
     const masterToken = createMasterToken(session.id, deliverySecret);
     await ensureGameSession(gameCode, masterToken, session);
     const playerUrl = `${origin}/?game=${encodeURIComponent(gameCode)}&mode=player`;
-    const masterUrl = `${origin}/?game=${encodeURIComponent(gameCode)}&claimMaster=1&masterToken=${encodeURIComponent(masterToken)}`;
+    const masterUrl = `${origin}/master`;
 
     const routeQrs = journeyIds.map((id, index) => {
       const station = stations.find((item) => item.id === id);
@@ -124,6 +124,7 @@ export async function GET(request: Request) {
 
     return noStoreJson({
       gameCode,
+      masterPassword: masterToken,
       playerUrl,
       masterUrl,
       routeQrs,

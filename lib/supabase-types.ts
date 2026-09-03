@@ -352,6 +352,24 @@ export type Database = {
         };
         Returns: Json;
       };
+      get_game_settings: {
+        Args: {
+          p_game_code: string;
+        };
+        Returns: Json;
+      };
+      update_game_settings: {
+        Args: {
+          p_game_code: string;
+          p_master_token: string;
+          p_public_title: string;
+          p_healing_cost: number;
+          p_wild_delay_seconds: number;
+          p_reward_menu: Json;
+          p_final_rewards: Json;
+        };
+        Returns: Json;
+      };
       register_player: {
         Args: {
           p_game_code: string;

@@ -13,7 +13,7 @@ export default function BuyPage() {
           </Link>
           <nav aria-label="Navegación principal">
             <a href="#como-funciona">Cómo funciona</a>
-            <Link href="/jugar">Tengo un código</Link>
+            <Link href="/master">Iniciar sesión</Link>
           </nav>
         </header>
 
