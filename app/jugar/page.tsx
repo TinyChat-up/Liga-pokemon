@@ -1,5 +1,5 @@
-import { LigaTerrazaGame } from "@/components/liga/LigaTerrazaGame";
+import { redirect } from "next/navigation";
 
 export default function PlayPage() {
-  return <LigaTerrazaGame />;
+  redirect("/");
 }

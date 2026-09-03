@@ -6,13 +6,13 @@ canjes y panel master.
 ## Qué incluye
 
 - Jugadores creados por nombre, sin lista fija previa.
-- Partidas aisladas con un código inventado por cada comprador u organizador.
+- Partidas aisladas con un usuario y contraseña master elegidos por cada comprador.
 - QR virtual personal para cada jugador.
 - Un único dispositivo master por código de partida.
 - Borrado de perfiles individuales o de toda la partida desde el panel master.
 - Ruta de 12 QR: 8 entrenadores y 4 encuentros cooperativos.
 - Encuentros salvajes aleatorios si un jugador tarda demasiado tras el primer QR.
-- Página de compra en `/comprar` con Stripe Checkout a 1,99 EUR.
+- Portada comercial en `/` con Stripe Checkout a 1,99 EUR.
 
 ## Desarrollo local
 
@@ -21,27 +21,26 @@ npm install
 npm run dev
 ```
 
-Abre `http://localhost:3000` para jugar y `http://localhost:3000/comprar` para
-probar la página de venta.
+Abre `http://localhost:3000` para probar la página de venta. Las rutas antiguas
+`/comprar` y `/jugar` redirigen a la portada; los enlaces con `?game=...`
+siguen abriendo el juego.
 
 ## Uso por comprador
 
-1. El comprador paga en `/comprar`.
+1. El comprador entra en `/` y elige su usuario y contraseña master.
 2. Stripe redirige a `/success?session_id=...`.
 3. El servidor verifica que el pago está completado.
-4. La pantalla de entrega muestra el código master, el link master, el link de
+4. La pantalla de entrega muestra sus credenciales, el link master, el link de
    jugadores y el ZIP con los QR de ruta.
-5. El organizador entra en `/master` con el usuario (código de partida) y la
-   contraseña recibidos tras el pago.
+5. El organizador entra en `/master` con el usuario y la contraseña elegidos.
 6. Desde el panel master puede abrir Jugadores, Centro Pokémon, Tienda,
    Premios y Resumen operativo.
 7. Comparte el link de jugadores por WhatsApp o cualquier canal. Ese enlace ya
    lleva la partida incluida: el jugador solo escribe su nombre.
 8. Cada jugador recibe un QR virtual ampliable desde su perfil.
 
-El código master no se pide a los jugadores. Si alguien intenta reclamar como
-master una partida ya reclamada por otro dispositivo, la base de datos lo
-rechaza.
+El usuario y la contraseña master los elige el comprador. La contraseña se
+guarda únicamente como hash en Supabase y no se incluye en Stripe metadata.
 
 ## Variables de entorno
 
@@ -63,8 +62,9 @@ pero para una configuracion nueva se recomienda la clave Secret de Supabase.
 
 `DELIVERY_SECRET` debe ser un valor aleatorio estable de al menos 32 caracteres.
 Generalo una sola vez con `openssl rand -hex 32`. No lo cambies al rotar Stripe:
-es la clave que permite reconstruir de forma segura el mismo código master para
-una compra existente.
+es la clave que permite reconstruir de forma segura el mismo código interno de
+partida para una compra existente. El usuario y la contraseña master los elige
+el comprador durante la compra.
 
 En Vercel añade las seis variables en Project Settings > Environment Variables
 y aplícalas a Production y Preview. Después crea un nuevo deployment; cambiar
@@ -95,6 +95,7 @@ orden desde el editor SQL:
 supabase/001_schema.sql
 supabase/002_rls_security.sql
 supabase/003_master_settings.sql
+supabase/004_buyer_credentials.sql
 ```
 
 Si estás reutilizando una base donde ya existen tablas antiguas como
@@ -119,6 +120,11 @@ cerrado por defecto.
 `003_master_settings.sql` añade la configuración editable por partida: nombre,
 precio de cura, demora del encuentro salvaje, productos de la Tienda Pokémon y
 premios del Alto Mando. Ejecútalo también en Supabase antes de probar el panel.
+
+`004_buyer_credentials.sql` añade el usuario master elegido por el comprador y
+la función de inicio de sesión. Ejecútalo después de las tres migraciones
+anteriores. Si la base ya tiene partidas, sus códigos internos se convierten en
+usuarios de compatibilidad; las compras nuevas usan el usuario elegido.
 
 Antes de borrar una base antigua, haz backup:
 
@@ -154,9 +160,8 @@ bucket privado `qr-kits` y sirvelo con URLs firmadas desde backend.
 ## Venta con Stripe
 
 La ruta `POST /api/checkout` crea una sesión de Stripe Checkout por 1,99 EUR.
-La ruta `GET /api/delivery?session_id=...` verifica la sesión pagada y prepara
-la entrega: usuario y contraseña master, link master, link de jugadores y QR
-descargables.
+La ruta `POST /api/delivery` verifica la sesión pagada y prepara la entrega:
+usuario y contraseña master, link master, link de jugadores y QR descargables.
 
 Para vender públicamente, configura `STRIPE_SECRET_KEY` y
 `NEXT_PUBLIC_SITE_URL` en Vercel. Configura tambien

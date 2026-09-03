@@ -21,10 +21,6 @@ function createGameCode(sessionId: string, deliverySecret: string): string {
   return `quest-${hash}`;
 }
 
-function createMasterToken(sessionId: string, deliverySecret: string): string {
-  return createHmac("sha256", deliverySecret).update(`master:${sessionId}`).digest("hex");
-}
-
 function noStoreJson(body: object, status = 200) {
   return NextResponse.json(body, {
     status,
@@ -37,7 +33,7 @@ function paymentIntentId(session: Stripe.Checkout.Session): string | null {
   return typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent.id;
 }
 
-async function ensureGameSession(gameCode: string, masterToken: string, session: Stripe.Checkout.Session): Promise<void> {
+async function ensureGameSession(gameCode: string, masterUsername: string, masterPassword: string, session: Stripe.Checkout.Session): Promise<void> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -56,17 +52,26 @@ async function ensureGameSession(gameCode: string, masterToken: string, session:
     p_status: session.payment_status,
     p_game_code: gameCode,
     p_join_code: gameCode,
-    p_master_token: masterToken,
+    p_master_username: masterUsername,
+    p_master_password: masterPassword,
     p_buyer_email: session.customer_details?.email ?? null,
   });
 
   if (error) throw new Error(error.message);
 }
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   const deliverySecret = process.env.DELIVERY_SECRET;
-  const sessionId = new URL(request.url).searchParams.get("session_id") ?? "";
+  let body: { session_id?: unknown; master_username?: unknown; master_password?: unknown };
+  try {
+    body = (await request.json()) as { session_id?: unknown; master_username?: unknown; master_password?: unknown };
+  } catch {
+    return noStoreJson({ error: "La solicitud de entrega no es válida." }, 400);
+  }
+  const sessionId = typeof body.session_id === "string" ? body.session_id.trim() : "";
+  const masterUsername = typeof body.master_username === "string" ? body.master_username.trim().toLowerCase() : "";
+  const masterPassword = typeof body.master_password === "string" ? body.master_password.trim() : "";
 
   if (!secretKey) {
     return noStoreJson({ error: "Falta STRIPE_SECRET_KEY en el servidor." }, 503);
@@ -88,6 +93,14 @@ export async function GET(request: Request) {
     return noStoreJson({ error: "Falta una sesión de pago válida." }, 400);
   }
 
+  if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(masterUsername)) {
+    return noStoreJson({ error: "El usuario debe tener entre 3 y 32 caracteres y solo usar letras, números, punto o guion." }, 400);
+  }
+
+  if (masterPassword.length < 12 || masterPassword.length > 80) {
+    return noStoreJson({ error: "La contraseña debe tener entre 12 y 80 caracteres." }, 400);
+  }
+
   const stripe = new Stripe(secretKey);
 
   try {
@@ -107,8 +120,7 @@ export async function GET(request: Request) {
 
     const origin = getOrigin(request);
     const gameCode = createGameCode(session.id, deliverySecret);
-    const masterToken = createMasterToken(session.id, deliverySecret);
-    await ensureGameSession(gameCode, masterToken, session);
+    await ensureGameSession(gameCode, masterUsername, masterPassword, session);
     const playerUrl = `${origin}/?game=${encodeURIComponent(gameCode)}&mode=player`;
     const masterUrl = `${origin}/master`;
 
@@ -124,7 +136,8 @@ export async function GET(request: Request) {
 
     return noStoreJson({
       gameCode,
-      masterPassword: masterToken,
+      masterUsername,
+      masterPassword,
       playerUrl,
       masterUrl,
       routeQrs,

@@ -268,6 +268,17 @@ export async function claimGameMaster(client: Client | null, gameCode: string, r
   throw new Error("El enlace master no es válido para esta partida.");
 }
 
+export async function loginGameMaster(client: Client | null, username: string, password: string): Promise<{ gameCode: string; masterToken: string }> {
+  if (!client) throw new Error("Supabase no está configurado.");
+  const { data, error } = await client.rpc("login_game_master", {
+    p_master_username: username.trim().toLowerCase(),
+    p_master_password: password.trim(),
+  });
+  if (error) throw new Error(error.message);
+  if (isMasterLoginResult(data)) return data;
+  throw new Error("El usuario o la contraseña no son válidos.");
+}
+
 export async function completeEliteFourRemotely(
   client: Client | null,
   player: Player,
@@ -924,6 +935,10 @@ function isFinalResult(value: unknown): value is { awarded: boolean; reward: str
 
 function isMasterClaimResult(value: unknown): value is { claimed: boolean; masterToken?: string } {
   return Boolean(value && typeof value === "object" && "claimed" in value);
+}
+
+function isMasterLoginResult(value: unknown): value is { gameCode: string; masterToken: string } {
+  return isRecord(value) && typeof value.gameCode === "string" && typeof value.masterToken === "string";
 }
 
 function isMissingRelationError(error: { message?: string; code?: string } | null): boolean {

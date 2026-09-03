@@ -15,6 +15,7 @@ type DeliveryQr = {
 
 type Delivery = {
   gameCode: string;
+  masterUsername: string;
   masterPassword: string;
   playerUrl: string;
   masterUrl: string;
@@ -34,6 +35,8 @@ export function GameDelivery() {
   const [loading, setLoading] = useState(true);
   const [copyMessage, setCopyMessage] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [masterUsername, setMasterUsername] = useState("");
+  const [masterPassword, setMasterPassword] = useState("");
 
   const allQrs = useMemo(() => {
     if (!delivery) return [];
@@ -41,24 +44,56 @@ export function GameDelivery() {
   }, [delivery]);
 
   useEffect(() => {
-    const querySessionId = new URLSearchParams(window.location.search).get("session_id") ?? "";
-    const sessionId = querySessionId || sessionStorage.getItem("qr-quest-checkout-session") || "";
-    if (querySessionId) sessionStorage.setItem("qr-quest-checkout-session", querySessionId);
-    fetch(`/api/delivery?session_id=${encodeURIComponent(sessionId)}`)
-      .then(async (response) => {
-        const data = (await response.json()) as Partial<Delivery> & { error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? "No se pudo preparar tu partida.");
-        if (!data.gameCode || !data.masterPassword || !data.playerUrl || !data.masterUrl || !data.routeQrs || !data.finalQr || !data.arenaQr) {
-          throw new Error("La entrega no contiene todos los datos de la partida.");
+    const timer = window.setTimeout(() => {
+      const querySessionId = new URLSearchParams(window.location.search).get("session_id") ?? "";
+      const sessionId = querySessionId || sessionStorage.getItem("qr-quest-checkout-session") || "";
+      if (querySessionId) sessionStorage.setItem("qr-quest-checkout-session", querySessionId);
+      const storedCredentials = sessionStorage.getItem("qr-quest-master-credentials");
+      if (storedCredentials) {
+        try {
+          const parsed = JSON.parse(storedCredentials) as { username?: string; password?: string };
+          setMasterUsername(parsed.username ?? "");
+          setMasterPassword(parsed.password ?? "");
+          if (parsed.username && parsed.password) void deliver(sessionId, parsed.username, parsed.password);
+          else setLoading(false);
+        } catch {
+          setLoading(false);
         }
-        setDelivery(data as Delivery);
-        window.history.replaceState({}, "", "/success");
-      })
-      .catch((deliveryError) => {
-        setError(deliveryError instanceof Error ? deliveryError.message : "No se pudo preparar tu partida.");
-      })
-      .finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
+
+  async function deliver(sessionId: string, username = masterUsername, password = masterPassword) {
+    if (!sessionId) {
+      setError("No se encuentra la sesión de pago. Vuelve al correo o al enlace de Stripe.");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/delivery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, master_username: username, master_password: password }),
+      });
+      const data = (await response.json()) as Partial<Delivery> & { error?: string };
+      if (!response.ok || data.error) throw new Error(data.error ?? "No se pudo preparar tu partida.");
+      if (!data.gameCode || !data.masterUsername || !data.masterPassword || !data.playerUrl || !data.masterUrl || !data.routeQrs || !data.finalQr || !data.arenaQr) {
+        throw new Error("La entrega no contiene todos los datos de la partida.");
+      }
+      setDelivery(data as Delivery);
+      sessionStorage.removeItem("qr-quest-master-credentials");
+      window.history.replaceState({}, "", "/success");
+    } catch (deliveryError) {
+      setError(deliveryError instanceof Error ? deliveryError.message : "No se pudo preparar tu partida.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function copy(value: string, label: string) {
     await navigator.clipboard.writeText(value);
@@ -91,7 +126,7 @@ export function GameDelivery() {
         [
           "QR Quest Party",
           "",
-          `Usuario master: ${delivery.gameCode}`,
+          `Usuario master: ${delivery.masterUsername}`,
           `Contrasena master: ${delivery.masterPassword}`,
           `Enlace master: ${delivery.masterUrl}`,
           `Enlace jugadores: ${delivery.playerUrl}`,
@@ -212,8 +247,22 @@ export function GameDelivery() {
     return <p className="delivery-status">Preparando tu partida...</p>;
   }
 
-  if (error || !delivery) {
-    return <p className="checkout-error">{error || "No se pudo preparar tu partida."}</p>;
+  if (!delivery) {
+    return (
+      <section className="delivery-setup">
+        <p className="eyebrow">ÚLTIMO PASO</p>
+        <h2>Confirma tu acceso master</h2>
+        <p>Escribe el mismo usuario y contraseña que elegiste antes de pagar.</p>
+        {error && <p className="checkout-error">{error}</p>}
+        <form onSubmit={(event) => { event.preventDefault(); const sessionId = new URLSearchParams(window.location.search).get("session_id") || sessionStorage.getItem("qr-quest-checkout-session") || ""; void deliver(sessionId); }}>
+          <label htmlFor="delivery-username">Usuario master</label>
+          <input id="delivery-username" value={masterUsername} onChange={(event) => setMasterUsername(event.target.value)} autoCapitalize="none" autoCorrect="off" autoComplete="username" />
+          <label htmlFor="delivery-password">Contraseña master</label>
+          <input id="delivery-password" type="password" value={masterPassword} onChange={(event) => setMasterPassword(event.target.value)} autoComplete="current-password" />
+          <button className="buy-button" type="submit" disabled={loading}>{loading ? "Preparando partida..." : "Activar mi partida"}</button>
+        </form>
+      </section>
+    );
   }
 
   const whatsappText = `Entra a la partida QR Quest Party: ${delivery.playerUrl}`;
@@ -223,8 +272,9 @@ export function GameDelivery() {
     <section className="delivery-panel">
       <article className="master-code-card">
         <span>Acceso privado del master</span>
-        <b>{delivery.gameCode}</b>
-        <small>Usuario master. Necesitarás también la contraseña para entrar desde cualquier dispositivo.</small>
+        <b>{delivery.masterUsername}</b>
+        <small>Tu usuario master elegido durante la compra.</small>
+        <code className="master-game-code">Partida: {delivery.gameCode}</code>
         <code className="master-password-value">{delivery.masterPassword}</code>
       </article>
 
@@ -240,6 +290,9 @@ export function GameDelivery() {
         </button>
         <button type="button" className="store-secondary" onClick={() => copy(delivery.masterUrl, "Link master")}>
           Copiar link master
+        </button>
+        <button type="button" className="store-secondary" onClick={() => copy(delivery.masterUsername, "Usuario master")}>
+          Copiar usuario master
         </button>
         <button type="button" className="store-secondary" onClick={() => copy(delivery.masterPassword, "Contraseña master")}>
           Copiar contraseña master

@@ -2,21 +2,21 @@
 
 import { type FormEvent, useState } from "react";
 import Link from "next/link";
-import { claimGameMaster } from "@/lib/game/supabase-service";
-import { GAME_CODE_MIN_LENGTH, STORAGE_KEYS, normalizeGameCode } from "@/lib/game/rules";
+import { loginGameMaster } from "@/lib/game/supabase-service";
+import { STORAGE_KEYS } from "@/lib/game/rules";
 import { supabase } from "@/lib/supabase";
 
 export function MasterLogin() {
-  const [gameCode, setGameCode] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const code = normalizeGameCode(gameCode);
-    if (code.length < GAME_CODE_MIN_LENGTH) {
-      setError(`El usuario debe tener al menos ${GAME_CODE_MIN_LENGTH} caracteres.`);
+    const cleanUsername = username.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(cleanUsername)) {
+      setError("El usuario debe tener entre 3 y 32 caracteres y solo usar letras, números, punto o guion.");
       return;
     }
     if (password.trim().length < 12) {
@@ -27,10 +27,10 @@ export function MasterLogin() {
     setLoading(true);
     setError("");
     try {
-      const token = await claimGameMaster(supabase, code, password.trim());
-      localStorage.setItem(STORAGE_KEYS.activeGameCode, code);
-      localStorage.setItem(`${STORAGE_KEYS.masterTokenPrefix}${code}`, token);
-      window.location.assign(`/?game=${encodeURIComponent(code)}&master=1`);
+      const result = await loginGameMaster(supabase, cleanUsername, password.trim());
+      localStorage.setItem(STORAGE_KEYS.activeGameCode, result.gameCode);
+      localStorage.setItem(`${STORAGE_KEYS.masterTokenPrefix}${result.gameCode}`, result.masterToken);
+      window.location.assign(`/?game=${encodeURIComponent(result.gameCode)}&master=1`);
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : "No se ha podido iniciar sesión.");
       setLoading(false);
@@ -50,14 +50,14 @@ export function MasterLogin() {
       <h1>Abre tu partida.</h1>
       <p className="lead">Usa el usuario y la contraseña que recibiste después del pago para gestionar jugadores, curas, tienda y premios.</p>
       <form className="master-login-form" onSubmit={submit}>
-        <label htmlFor="master-code">Usuario master</label>
-        <input id="master-code" value={gameCode} onChange={(event) => setGameCode(event.target.value)} placeholder="quest-..." autoCapitalize="none" autoCorrect="off" autoComplete="username" />
+        <label htmlFor="master-code">Tu usuario master</label>
+        <input id="master-code" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="ej. entrenador_ana" autoCapitalize="none" autoCorrect="off" autoComplete="username" />
         <label htmlFor="master-password">Contraseña master</label>
         <input id="master-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña privada" autoComplete="current-password" />
         <button className="master-login-submit" type="submit" disabled={loading}>{loading ? "Comprobando..." : "Entrar al panel master"}</button>
       </form>
       {error && <p className="toast master-login-error">{error}</p>}
-      <Link className="master-login-back" href="/comprar">Volver a la tienda</Link>
+      <Link className="master-login-back" href="/">Volver a la tienda</Link>
     </section>
   );
 }

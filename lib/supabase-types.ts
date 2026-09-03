@@ -341,8 +341,16 @@ export type Database = {
           p_status: string;
           p_game_code: string;
           p_join_code: string;
-          p_master_token: string;
+          p_master_username: string;
+          p_master_password: string;
           p_buyer_email?: string | null;
+        };
+        Returns: Json;
+      };
+      login_game_master: {
+        Args: {
+          p_master_username: string;
+          p_master_password: string;
         };
         Returns: Json;
       };
