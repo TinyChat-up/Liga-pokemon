@@ -1,16 +1,18 @@
-# Nivel 27 · Liga de la Terraza
+# QR Quest Party
 
-Juego móvil de cumpleaños con ruta QR, capturas, Team Rocket, Arena de Payá,
-tokens, canjes y panel de Alejandro.
+Juego web móvil para eventos con ruta QR, combates estilo RPG, capturas, tokens,
+canjes y panel master.
 
-## Despliegue en Vercel
+## Qué incluye
 
-1. Sube esta carpeta completa a Vercel.
-2. Añade `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-3. Pulsa Deploy.
-
-La clave `service_role` nunca debe añadirse al navegador ni a variables
-`NEXT_PUBLIC_`.
+- Jugadores creados por nombre, sin lista fija previa.
+- Partidas aisladas con un código inventado por cada comprador u organizador.
+- QR virtual personal para cada jugador.
+- Un único dispositivo master por código de partida.
+- Borrado de perfiles individuales o de toda la partida desde el panel master.
+- Ruta de 12 QR: 8 entrenadores y 4 encuentros cooperativos.
+- Encuentros salvajes aleatorios si un jugador tarda demasiado tras el primer QR.
+- Página de compra en `/comprar` con Stripe Checkout a 1,99 EUR.
 
 ## Desarrollo local
 
@@ -19,23 +21,159 @@ npm install
 npm run dev
 ```
 
-## Preparación de Supabase para el evento
+Abre `http://localhost:3000` para jugar y `http://localhost:3000/comprar` para
+probar la página de venta.
 
-Antes de desplegar esta versión, abre el editor SQL del proyecto Supabase
-`lxiuaxybilichtekloip` y ejecuta completo:
+## Uso por comprador
+
+1. El comprador paga en `/comprar`.
+2. Stripe redirige a `/success?session_id=...`.
+3. El servidor verifica que el pago está completado.
+4. La pantalla de entrega muestra el código master, el link master, el link de
+   jugadores y el ZIP con los QR de ruta.
+5. El organizador abre `Abrir como master` para reclamar la gestión de la
+   partida en su dispositivo.
+6. Comparte el link de jugadores por WhatsApp o cualquier canal.
+7. Cada jugador entra con el link ya preparado, escribe su nombre y recibe su QR
+   virtual.
+
+El código master no se pide a los jugadores. Si alguien intenta reclamar como
+master una partida ya reclamada por otro dispositivo, la base de datos lo
+rechaza.
+
+## Variables de entorno
+
+Copia `.env.example` a `.env.local` y rellena los valores:
 
 ```text
-supabase/20260829_event_completion.sql
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+STRIPE_SECRET_KEY=
+SUPABASE_SECRET_KEY=
+DELIVERY_SECRET=
 ```
 
-La migración es idempotente. Añade el Hall de la Fama, la recompensa final,
-el registro de ajustes administrativos y la resolución atómica de Team Rocket.
-También actualiza `reset_liga27_game()` para limpiar estas tablas.
+`SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY` y `DELIVERY_SECRET` son solo de
+servidor. No los pongas nunca en variables `NEXT_PUBLIC_` ni en codigo que
+llegue al navegador. La antigua `SUPABASE_SERVICE_ROLE_KEY` tambien funciona,
+pero para una configuracion nueva se recomienda la clave Secret de Supabase.
+
+`DELIVERY_SECRET` debe ser un valor aleatorio estable de al menos 32 caracteres.
+Generalo una sola vez con `openssl rand -hex 32`. No lo cambies al rotar Stripe:
+es la clave que permite reconstruir de forma segura el mismo código master para
+una compra existente.
+
+En Vercel añade las seis variables en Project Settings > Environment Variables
+y aplícalas a Production y Preview. Después crea un nuevo deployment; cambiar
+una variable no modifica deployments que ya estaban construidos.
+
+La `SUPABASE_SECRET_KEY` se obtiene en Supabase desde Project Settings > API
+Keys, creando o copiando una clave de tipo Secret. Debe guardarse únicamente
+como variable sensible de Vercel y nunca con prefijo `NEXT_PUBLIC_`.
+
+## PDF original de la ruta
+
+Deja tu archivo aquí:
+
+```text
+private-assets/qr-route-source.pdf
+```
+
+La carpeta está protegida por `.gitignore`. Cuando el PDF esté colocado se puede
+revisar y convertir en una plantilla personalizada por compra sin publicarlo
+directamente.
+
+## Crear Base De Datos Desde Cero
+
+Para un proyecto Supabase nuevo, ejecuta solamente estos archivos y en este
+orden desde el editor SQL:
+
+```text
+supabase/001_schema.sql
+supabase/002_rls_security.sql
+```
+
+Si estás reutilizando una base donde ya existen tablas antiguas como
+`profiles`, primero ejecuta este reset de desarrollo:
+
+```text
+supabase/000_reset_public_schema_dev.sql
+```
+
+Después ejecuta `001_schema.sql` y `002_rls_security.sql`.
+
+Si la estructura nueva ya estaba instalada y el pago mostraba
+`function digest(text, unknown) does not exist`, no vuelvas a borrar la base:
+ejecuta de nuevo solamente `supabase/002_rls_security.sql`. El archivo es
+reejecutable y corrige la referencia a `pgcrypto`.
+
+Esto crea la estructura comercial limpia: `games` como entidad central,
+compras Stripe idempotentes, jugadores por `game_id`, QR/checkpoints por
+partida, ledger de tokens, canjes, capturas, batallas, hall of fame y RLS
+cerrado por defecto.
+
+Antes de borrar una base antigua, haz backup:
+
+```bash
+supabase db dump --schema public --file backup-schema.sql
+supabase db dump --data-only --file backup-data.sql
+```
+
+No hay datos ni partidas de demostracion: la primera partida se crea solamente
+cuando Stripe confirma un pago. Las migraciones parciales antiguas se han
+retirado para evitar que se ejecuten por error.
+
+### Supabase Auth
+
+Para el producto final, activa Supabase Auth para compradores/master. Los
+jugadores pueden seguir entrando rapido por link de partida y sesion anonima de
+jugador, pero el master debe quedar asociado a un usuario autenticado o a una
+compra verificada.
+
+Redirects recomendados:
+
+```text
+http://localhost:3000/**
+https://tu-dominio.com/**
+```
+
+### Storage
+
+No hace falta bucket para la primera version. Los QR se generan en el navegador
+tras validar el pago. Si mas adelante quieres guardar PDFs historicos, crea un
+bucket privado `qr-kits` y sirvelo con URLs firmadas desde backend.
+
+## Venta con Stripe
+
+La ruta `POST /api/checkout` crea una sesión de Stripe Checkout por 1,99 EUR.
+La ruta `GET /api/delivery?session_id=...` verifica la sesión pagada y prepara
+la entrega: código master, link master, link de jugadores y QR descargables.
+
+Para vender públicamente, configura `STRIPE_SECRET_KEY` y
+`NEXT_PUBLIC_SITE_URL` en Vercel. Configura tambien
+`SUPABASE_SECRET_KEY` solo en servidor para que Stripe pueda crear la
+partida y la fila `purchases` sin abrir permisos publicos.
+
+Webhook recomendado:
+
+```text
+checkout.session.completed -> crear/confirmar purchase + game
+checkout.session.expired   -> marcar purchase como expired si se habia creado
+payment_intent.payment_failed -> marcar fallo de pago
+```
+
+La funcion SQL `create_game_after_purchase(...)` es idempotente: si Stripe manda
+dos veces el mismo evento, devuelve la misma partida y no crea duplicados.
 
 ## Seguridad pendiente
 
-El código 8128 es adecuado como barrera práctica para este evento privado,
-pero está presente en la aplicación web y no sustituye una autenticación real.
-Antes de compartir públicamente el panel de administración, hay que protegerlo
-con Supabase Auth y comprobar la identidad de Alejandro en las RPC y políticas
-RLS. Nunca debe resolverse añadiendo una clave `service_role` al navegador.
+La base nueva ya deja el modelo correcto, pero el frontend todavia conserva
+compatibilidad con algunos scripts antiguos. La siguiente fase recomendada es
+mover todas las escrituras sensibles del cliente a RPC/rutas backend:
+
+- validar preguntas sin enviar la respuesta correcta al navegador;
+- usar tokens publicos opacos de `checkpoints.public_token` en los QR;
+- crear compras desde webhook con `SUPABASE_SECRET_KEY`;
+- asociar master a Supabase Auth;
+- leer snapshots por `get_game_snapshot(...)` y no por selects directos.

@@ -22,6 +22,7 @@ export type Capture = {
 export type Player = {
   id: string;
   dbId?: string;
+  gameCode?: string;
   name: string;
   evolution?: Evolution;
   level: number;
@@ -113,10 +114,7 @@ export type GameScreen =
   | "evolution"
   | "home"
   | "pokedex"
-  | "route"
   | "scan"
   | "arena"
   | "team"
-  | "hall"
-  | "admin-gate"
   | "admin";

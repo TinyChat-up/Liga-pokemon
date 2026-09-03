@@ -2,38 +2,13 @@ import type { Capture, Eeveelution, MenuItem, Player, Station } from "./types";
 import { REWARDS } from "./rules";
 export { QUESTION_BANK as questions } from "./question-bank";
 
-export const playerNames = [
-  "Eduardo",
-  "Karim",
-  "Carlos de la Fuente",
-  "Cristian",
-  "Nicole",
-  "Ros",
-  "María Santana",
-  "María Alfonso",
-  "Lola",
-  "Ismael",
-  "Marco",
-  "Alex",
-  "María Loufoukou",
-  "Juan Carlos",
-] as const;
+export const defaultPlayers: Player[] = [];
 
-export const defaultPlayers: Player[] = [
-  {
-    id: "alejandro",
-    name: "Alejandro",
-    level: 1,
-    xp: 20,
-    energy: 100,
-    tokens: 0,
-    route: [],
-    captures: [],
-    arenaEvents: [],
-    questionHistory: [],
-  },
-  ...playerNames.map((name, index) => ({
-    id: `jugador-${index + 1}`,
+export function createDefaultPlayer(name: string, id: string, dbId?: string, gameCode?: string): Player {
+  return {
+    id,
+    dbId,
+    gameCode,
     name,
     level: 1,
     xp: 0,
@@ -43,8 +18,8 @@ export const defaultPlayers: Player[] = [
     captures: [],
     arenaEvents: [],
     questionHistory: [],
-  })),
-];
+  };
+}
 
 export const stations: Station[] = [
   ...[

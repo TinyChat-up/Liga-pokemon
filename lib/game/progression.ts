@@ -55,9 +55,9 @@ export function getAchievements(player: Player): Achievement[] {
     { id: "collector", title: "Coleccionista", description: "Conserva 6 Pokémon", unlocked: player.captures.length >= 6 },
     { id: "legend", title: "Encuentro legendario", description: "Captura un Pokémon legendario", unlocked: player.captures.some((capture) => capture.rarity === "Legendario") },
     { id: "survivor", title: "Superviviente", description: "Sigue en ruta con 25% de energía o menos", unlocked: player.route.length > 0 && player.energy > 0 && player.energy <= 25 },
-    { id: "arena", title: "Leyenda de Arena", description: "Gana una Arena de Payá", unlocked: arenaWins > 0 },
+    { id: "arena", title: "Leyenda de Arena", description: "Gana una Arena sorpresa", unlocked: arenaWins > 0 },
     { id: "flawless", title: "Mente perfecta", description: "Consigue 6 aciertos sin fallos registrados", unlocked: (player.correctAnswers ?? 0) >= 6 && (player.wrongAnswers ?? 0) === 0 },
-    { id: "league", title: "Campeón de la Terraza", description: "Conquista el Alto Mando", unlocked: Boolean(player.finalReward) },
+    { id: "league", title: "Campeón de QR Quest", description: "Conquista el Alto Mando", unlocked: Boolean(player.finalReward) },
   ];
 }
 

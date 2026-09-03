@@ -1,10 +1,28 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { defaultPlayers } from "./data";
+import { createDefaultPlayer, defaultPlayers } from "./data";
 import type { ArenaMatchSummary, Capture, Evolution, Player, RedemptionSummary, TeamInviteSummary } from "./types";
 import type { Database } from "../supabase-types";
 
 type Client = SupabaseClient<Database>;
+type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+type ProgressRow = Database["public"]["Tables"]["game_progress"]["Row"];
+type CaptureRow = Database["public"]["Tables"]["captures"]["Row"];
+type ArenaMatchRow = Database["public"]["Tables"]["arena_matches"]["Row"];
+type RedemptionRow = Database["public"]["Tables"]["redemptions"]["Row"];
+type QuestionHistoryRow = Database["public"]["Tables"]["question_history"]["Row"];
+type TeamInviteRow = Database["public"]["Tables"]["team_invites"]["Row"];
+type FinalRewardRow = Database["public"]["Tables"]["final_rewards"]["Row"];
+type SnapshotRows = {
+  profiles: ProfileRow[];
+  game_progress: ProgressRow[];
+  captures: CaptureRow[];
+  arena_matches: ArenaMatchRow[];
+  redemptions: RedemptionRow[];
+  question_history: QuestionHistoryRow[];
+  team_invites: TeamInviteRow[];
+  final_rewards: FinalRewardRow[];
+};
 
 export type GameSnapshot = {
   players: Player[];
@@ -12,104 +30,131 @@ export type GameSnapshot = {
   mode: "remote" | "local";
 };
 
-export async function loadGameSnapshot(client: Client | null): Promise<GameSnapshot> {
+export async function loadGameSnapshot(client: Client | null, gameCode: string): Promise<GameSnapshot> {
   if (!client) return { players: defaultPlayers, teamInvites: [], mode: "local" };
+  if (!gameCode) return { players: [], teamInvites: [], mode: "remote" };
 
-  const [profilesResult, progressResult, capturesResult, arenaResult, redemptionsResult] = await Promise.all([
-    client.from("profiles").select("*"),
-    client.from("game_progress").select("player_id,station_id"),
-    client.from("captures").select("*").is("redeemed_at", null),
-    client.from("arena_matches").select("*"),
-    client.from("redemptions").select("*"),
-  ]);
-  const questionHistoryResult = await client.from("question_history").select("player_id,question_key,is_correct");
-  const [teamInvitesResult, finalRewardsResult] = await Promise.all([
-    client.from("team_invites").select("*"),
-    client.from("final_rewards").select("*"),
-  ]);
+  let rows = await loadSnapshotViaRpc(client, gameCode);
 
-  if (profilesResult.error) {
-    throw new Error(profilesResult.error.message);
-  }
-  if (arenaResult.error) {
-    throw new Error(arenaResult.error.message);
-  }
-  if (redemptionsResult.error) {
-    throw new Error(redemptionsResult.error.message);
-  }
-  if (questionHistoryResult.error) {
-    throw new Error(questionHistoryResult.error.message);
-  }
-  if (teamInvitesResult.error) {
-    throw new Error(teamInvitesResult.error.message);
-  }
-  if (finalRewardsResult.error && !isMissingRelationError(finalRewardsResult.error)) {
-    throw new Error(finalRewardsResult.error.message);
+  if (!rows) {
+    const profilesResult = await client.from("profiles").select("*").eq("game_code", gameCode);
+
+    if (profilesResult.error) {
+      throw new Error(profilesResult.error.message);
+    }
+
+    const profileRows = profilesResult.data ?? [];
+    const playerDbIds = profileRows.map((row) => row.id);
+
+    if (!playerDbIds.length) {
+      return { players: [], teamInvites: [], mode: "remote" };
+    }
+
+    const [progressResult, capturesResult, arenaResult, redemptionsResult, questionHistoryResult, teamInvitesResult, finalRewardsResult] =
+      await Promise.all([
+        client.from("game_progress").select("*").in("player_id", playerDbIds),
+        client.from("captures").select("*").in("player_id", playerDbIds).is("redeemed_at", null),
+        client
+          .from("arena_matches")
+          .select("*")
+          .or(`player_one_id.in.(${playerDbIds.join(",")}),player_two_id.in.(${playerDbIds.join(",")})`),
+        client.from("redemptions").select("*").in("player_id", playerDbIds),
+        client.from("question_history").select("*").in("player_id", playerDbIds),
+        client
+          .from("team_invites")
+          .select("*")
+          .or(`from_player_id.in.(${playerDbIds.join(",")}),to_player_id.in.(${playerDbIds.join(",")})`),
+        client.from("final_rewards").select("*").in("player_id", playerDbIds),
+      ]);
+
+    if (arenaResult.error) {
+      throw new Error(arenaResult.error.message);
+    }
+    if (redemptionsResult.error) {
+      throw new Error(redemptionsResult.error.message);
+    }
+    if (questionHistoryResult.error) {
+      throw new Error(questionHistoryResult.error.message);
+    }
+    if (teamInvitesResult.error) {
+      throw new Error(teamInvitesResult.error.message);
+    }
+    if (finalRewardsResult.error && !isMissingRelationError(finalRewardsResult.error)) {
+      throw new Error(finalRewardsResult.error.message);
+    }
+
+    rows = {
+      profiles: profileRows,
+      game_progress: progressResult.data ?? [],
+      captures: capturesResult.data ?? [],
+      arena_matches: arenaResult.data ?? [],
+      redemptions: redemptionsResult.data ?? [],
+      question_history: questionHistoryResult.data ?? [],
+      team_invites: teamInvitesResult.data ?? [],
+      final_rewards: finalRewardsResult.data ?? [],
+    };
   }
 
-  const progress = progressResult.data ?? [];
-  const captures = capturesResult.data ?? [];
-  const arenaMatches = arenaResult.data ?? [];
-  const redemptions = redemptionsResult.data ?? [];
-  const questionHistory = questionHistoryResult.data ?? [];
-  const finalRewards = finalRewardsResult.data ?? [];
-  const remotePlayers = (profilesResult.data ?? []).map<Player>((row) => ({
-    id: row.player_code,
-    dbId: row.id,
-    name: row.display_name,
-    evolution: row.evolution ?? undefined,
-    level: row.level,
-    xp: row.xp,
-    energy: row.energy,
-    tokens: row.tokens,
-    route: unique(progress.filter((item) => item.player_id === row.id).map((item) => item.station_id)),
-    captures: captures
-      .filter((item) => item.player_id === row.id)
-      .map((item) => ({
-        recordId: item.id,
-        id: item.pokemon_id,
-        name: item.pokemon_name,
-        rarity: item.rarity,
-        sprite: item.sprite_id,
-        value: item.token_value,
-      })),
-    arenaEvents: unique(
-      arenaMatches
-        .filter((item) => item.player_one_id === row.id && item.station_id)
-        .map((item) => item.station_id!)
-    ),
-    arenaHistory: arenaMatches
-      .filter((item) => item.player_one_id === row.id || item.player_two_id === row.id)
-      .map<ArenaMatchSummary>((item) => ({
-        id: item.id,
-        stationId: item.station_id ?? undefined,
-        opponentId: item.player_one_id === row.id ? item.player_two_id : item.player_one_id,
-        challenge: item.challenge,
-        winnerId: item.winner_player_id ?? undefined,
-        loserId: item.loser_player_id ?? undefined,
-        rewardTokens: item.reward_tokens,
-        createdAt: item.created_at,
-      })),
-    redemptions: redemptions
-      .filter((item) => item.player_id === row.id)
-      .map<RedemptionSummary>((item) => ({
-        id: item.id,
-        itemName: item.item_name,
-        tokenCost: item.token_cost,
-        createdAt: item.created_at,
-      })),
-    questionHistory: unique(
-      questionHistory.filter((item) => item.player_id === row.id).map((item) => item.question_key),
-    ),
-    correctAnswers: questionHistory.filter((item) => item.player_id === row.id && item.is_correct === true).length,
-    wrongAnswers: questionHistory.filter((item) => item.player_id === row.id && item.is_correct === false).length,
-    finalReward: finalRewards.find((item) => item.player_id === row.id)?.reward_name,
-    finalCompletedAt: finalRewards.find((item) => item.player_id === row.id)?.completed_at,
-  }));
+  const remotePlayers = rows.profiles
+    .map<Player>((row) => ({
+      id: row.player_code,
+      dbId: row.id,
+      gameCode: row.game_code,
+      name: row.display_name,
+      evolution: row.evolution ?? undefined,
+      level: row.level,
+      xp: row.xp,
+      energy: row.energy,
+      tokens: row.tokens,
+      route: unique(rows.game_progress.filter((item) => item.player_id === row.id).map((item) => item.station_id)),
+      captures: rows.captures
+        .filter((item) => item.player_id === row.id)
+        .map((item) => ({
+          recordId: item.id,
+          id: item.pokemon_id,
+          name: item.pokemon_name,
+          rarity: item.rarity,
+          sprite: item.sprite_id,
+          value: item.token_value,
+        })),
+      arenaEvents: unique(
+        rows.arena_matches
+          .filter((item) => item.player_one_id === row.id && item.station_id)
+          .map((item) => item.station_id!)
+      ),
+      arenaHistory: rows.arena_matches
+        .filter((item) => item.player_one_id === row.id || item.player_two_id === row.id)
+        .map<ArenaMatchSummary>((item) => ({
+          id: item.id,
+          stationId: item.station_id ?? undefined,
+          opponentId: item.player_one_id === row.id ? item.player_two_id : item.player_one_id,
+          challenge: item.challenge,
+          winnerId: item.winner_player_id ?? undefined,
+          loserId: item.loser_player_id ?? undefined,
+          rewardTokens: item.reward_tokens,
+          createdAt: item.created_at,
+        })),
+      redemptions: rows.redemptions
+        .filter((item) => item.player_id === row.id)
+        .map<RedemptionSummary>((item) => ({
+          id: item.id,
+          itemName: item.item_name,
+          tokenCost: item.token_cost,
+          createdAt: item.created_at,
+        })),
+      questionHistory: unique(
+        rows.question_history.filter((item) => item.player_id === row.id).map((item) => item.question_key),
+      ),
+      correctAnswers: rows.question_history.filter((item) => item.player_id === row.id && item.is_correct === true).length,
+      wrongAnswers: rows.question_history.filter((item) => item.player_id === row.id && item.is_correct === false).length,
+      finalReward: rows.final_rewards.find((item) => item.player_id === row.id)?.reward_name,
+      finalCompletedAt: rows.final_rewards.find((item) => item.player_id === row.id)?.completed_at,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name, "es"));
 
   return {
-    players: defaultPlayers.map((seed) => remotePlayers.find((item) => item.id === seed.id) ?? seed),
-    teamInvites: (teamInvitesResult.data ?? []).map((invite) => ({
+    players: remotePlayers,
+    teamInvites: rows.team_invites.map((invite) => ({
       id: invite.id,
       fromPlayerId: invite.from_player_id,
       toPlayerId: invite.to_player_id,
@@ -119,6 +164,65 @@ export async function loadGameSnapshot(client: Client | null): Promise<GameSnaps
     })),
     mode: "remote",
   };
+}
+
+export async function createPlayerProfile(
+  client: Client | null,
+  gameCode: string,
+  displayName: string,
+): Promise<Player> {
+  const cleanName = displayName.trim().replace(/\s+/g, " ");
+  if (!cleanName) throw new Error("El nombre no puede estar vacío.");
+  if (!gameCode) throw new Error("El código de partida es obligatorio.");
+  const playerCode = `player-${crypto.randomUUID().slice(0, 8)}`;
+
+  if (!client) return createDefaultPlayer(cleanName, playerCode, undefined, gameCode);
+
+  const sessionToken = crypto.randomUUID();
+  const rpc = await client.rpc("register_player", {
+    p_game_code: gameCode,
+    p_display_name: cleanName,
+    p_player_code: playerCode,
+    p_session_token: sessionToken,
+  });
+
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    if (isProfileRow(rpc.data)) return createDefaultPlayer(rpc.data.display_name, rpc.data.player_code, rpc.data.id, gameCode);
+    throw new Error("No se pudo crear el perfil de jugador.");
+  }
+
+  const { data, error } = await client
+    .from("profiles")
+    .insert({
+      game_code: gameCode,
+      player_code: playerCode,
+      display_name: cleanName,
+      level: 1,
+      xp: 0,
+      energy: 100,
+      tokens: 0,
+    })
+    .select("id, player_code, display_name")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return createDefaultPlayer(data.display_name, data.player_code, data.id, gameCode);
+}
+
+export async function claimGameMaster(client: Client | null, gameCode: string, requestedToken?: string): Promise<string> {
+  if (!requestedToken) throw new Error("Falta la credencial privada del master.");
+  const masterToken = requestedToken;
+  if (!client) return masterToken;
+
+  const { data, error } = await client.rpc("verify_game_master", {
+    p_game_code: gameCode,
+    p_master_token: masterToken,
+  });
+
+  if (error) throw new Error(error.message);
+  if (isMasterClaimResult(data) && data.claimed && data.masterToken) return data.masterToken;
+  throw new Error("El enlace master no es válido para esta partida.");
 }
 
 export async function completeEliteFourRemotely(
@@ -156,12 +260,24 @@ export async function respondToTeamInvite(
   status: "accepted" | "declined",
 ): Promise<void> {
   if (!client) return;
+  const rpc = await client.rpc("respond_team_invite", {
+    p_invite_id: inviteId,
+    p_status: status,
+  });
+
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    return;
+  }
+
   const { error } = await client.from("team_invites").update({ status }).eq("id", inviteId).eq("status", "pending");
   if (error) throw new Error(error.message);
 }
 
 export async function recoverPlayerRemotely(
   client: Client | null,
+  gameCode: string,
+  masterToken: string,
   player: Player,
   action: "heal" | "tokens" | "unstick",
   reason: string,
@@ -170,7 +286,9 @@ export async function recoverPlayerRemotely(
 ): Promise<void> {
   if (!client || !player.dbId) return;
   const rpc = await client.rpc("admin_recover_player", {
-    p_admin_code: "8128",
+    p_admin_code: "master-panel",
+    p_game_code: gameCode,
+    p_master_token: masterToken,
     p_player_id: player.dbId,
     p_action: action,
     p_reason: reason,
@@ -190,8 +308,52 @@ export async function recoverPlayerRemotely(
   }
 }
 
+export async function deletePlayerProfileRemotely(
+  client: Client | null,
+  gameCode: string,
+  masterToken: string,
+  player: Player,
+): Promise<void> {
+  if (!client || !player.dbId) return;
+
+  const { error } = await client.rpc("delete_player_profile", {
+    p_game_code: gameCode,
+    p_master_token: masterToken,
+    p_player_id: player.dbId,
+  });
+
+  if (error) throw new Error(error.message);
+}
+
+export async function resetGameSessionRemotely(
+  client: Client | null,
+  gameCode: string,
+  masterToken: string,
+): Promise<void> {
+  if (!client) return;
+
+  const { error } = await client.rpc("reset_game_session", {
+    p_game_code: gameCode,
+    p_master_token: masterToken,
+  });
+
+  if (error) throw new Error(error.message);
+}
+
 export async function saveProfile(client: Client | null, player: Player): Promise<void> {
   if (!client || !player.dbId) return;
+
+  if (player.evolution) {
+    const rpc = await client.rpc("set_player_evolution", {
+      p_player_id: player.dbId,
+      p_evolution: player.evolution,
+    });
+
+    if (!isMissingRpcError(rpc.error)) {
+      if (rpc.error) throw new Error(rpc.error.message);
+      return;
+    }
+  }
 
   const { error } = await client
     .from("profiles")
@@ -216,6 +378,18 @@ export async function recordQuestionShown(
 ): Promise<boolean> {
   if (!client || !player.dbId) return true;
 
+  const rpc = await client.rpc("record_question_shown", {
+    p_player_id: player.dbId,
+    p_station_id: stationId,
+    p_question_key: key,
+  });
+
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error?.code === "23505") return false;
+    if (rpc.error) throw new Error(rpc.error.message);
+    return true;
+  }
+
   const { error } = await client.from("question_history").insert({
     player_id: player.dbId,
     station_id: stationId,
@@ -238,6 +412,18 @@ export async function recordQuestionAnswer(
   isCorrect: boolean,
 ): Promise<void> {
   if (!client || !player.dbId) return;
+
+  const rpc = await client.rpc("record_question_answer", {
+    p_player_id: player.dbId,
+    p_question_key: key,
+    p_selected_answer: selectedAnswer,
+    p_is_correct: isCorrect,
+  });
+
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    return;
+  }
 
   const { error } = await client
     .from("question_history")
@@ -351,6 +537,61 @@ export async function completeTeamStationRemotely(
   const playerTwoXp = playerTwo.xp + 25;
   await completeStationRemotely(client, playerOne, stationId, rewardTokens, playerOneCapture, playerOneXp, Math.floor(playerOneXp / 100) + 1);
   await completeStationRemotely(client, playerTwo, stationId, rewardTokens, playerTwoCapture, playerTwoXp, Math.floor(playerTwoXp / 100) + 1);
+}
+
+export async function recordWildCaptureRemotely(
+  client: Client | null,
+  player: Player,
+  capture: Capture,
+  xp: number,
+  level: number,
+): Promise<void> {
+  if (!client || !player.dbId || !capture.recordId) return;
+
+  const rpc = await client.rpc("record_wild_capture", {
+    p_player_id: player.dbId,
+    p_xp: xp,
+    p_level: level,
+    p_capture_id: capture.recordId,
+    p_pokemon_id: capture.id,
+    p_pokemon_name: capture.name,
+    p_rarity: capture.rarity,
+    p_sprite_id: capture.sprite,
+    p_token_value: capture.value,
+  });
+
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    return;
+  }
+
+  const [{ error: profileError }, captureResult] = await Promise.all([
+    client
+      .from("profiles")
+      .update({
+        xp,
+        level,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", player.dbId),
+    client
+      .from("captures")
+      .upsert(
+        {
+          id: capture.recordId,
+          player_id: player.dbId,
+          pokemon_id: capture.id,
+          pokemon_name: capture.name,
+          rarity: capture.rarity,
+          sprite_id: capture.sprite,
+          token_value: capture.value,
+        },
+        { onConflict: "id", ignoreDuplicates: true },
+      ),
+  ]);
+
+  if (profileError) throw new Error(profileError.message);
+  if (captureResult.error) throw new Error(captureResult.error.message);
 }
 
 export async function redeemCaptureRemotely(
@@ -470,6 +711,17 @@ export async function createTeamInvite(
 ): Promise<void> {
   if (!client || !fromPlayerId || !toPlayerId) return;
 
+  const rpc = await client.rpc("create_team_invite", {
+    p_from_player_id: fromPlayerId,
+    p_to_player_id: toPlayerId,
+    p_station_id: stationId,
+  });
+
+  if (!isMissingRpcError(rpc.error)) {
+    if (rpc.error) throw new Error(rpc.error.message);
+    return;
+  }
+
   const existingQuery = client
     .from("team_invites")
     .select("id")
@@ -554,6 +806,45 @@ export function normalizeEvolution(value: string | undefined): Evolution | undef
   return allowed.find((item) => item === value);
 }
 
+async function loadSnapshotViaRpc(client: Client, gameCode: string): Promise<SnapshotRows | null> {
+  const { data, error } = await client.rpc("get_game_snapshot", {
+    p_game_code: gameCode,
+  });
+
+  if (isMissingRpcError(error)) return null;
+  if (error) throw new Error(error.message);
+
+  return {
+    profiles: jsonArray<ProfileRow>(data, "profiles"),
+    game_progress: jsonArray<ProgressRow>(data, "game_progress"),
+    captures: jsonArray<CaptureRow>(data, "captures"),
+    arena_matches: jsonArray<ArenaMatchRow>(data, "arena_matches"),
+    redemptions: jsonArray<RedemptionRow>(data, "redemptions"),
+    question_history: jsonArray<QuestionHistoryRow>(data, "question_history"),
+    team_invites: jsonArray<TeamInviteRow>(data, "team_invites"),
+    final_rewards: jsonArray<FinalRewardRow>(data, "final_rewards"),
+  };
+}
+
+function jsonArray<T>(payload: unknown, key: string): T[] {
+  if (!isRecord(payload)) return [];
+  const value = payload[key];
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function isProfileRow(value: unknown): value is ProfileRow {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.player_code === "string" &&
+    typeof value.display_name === "string"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
@@ -582,6 +873,10 @@ function isFinalResult(value: unknown): value is { awarded: boolean; reward: str
   return Boolean(
     value && typeof value === "object" && "awarded" in value && "reward" in value,
   );
+}
+
+function isMasterClaimResult(value: unknown): value is { claimed: boolean; masterToken?: string } {
+  return Boolean(value && typeof value === "object" && "claimed" in value);
 }
 
 function isMissingRelationError(error: { message?: string; code?: string } | null): boolean {

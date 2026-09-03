@@ -3,8 +3,8 @@ import "./globals.css";
 import "./game-ui.css";
 
 export const metadata: Metadata = {
-  title: "Nivel 27 · Liga de la Terraza",
-  description: "La ruta QR de la Liga de la Terraza.",
+  title: "QR Quest Party",
+  description: "Juego de ruta QR con combates, capturas y panel master para eventos.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

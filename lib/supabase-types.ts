@@ -8,6 +8,7 @@ export type Database = {
       profiles: {
         Row: {
           id: string;
+          game_code: string;
           player_code: string;
           display_name: string;
           evolution: Evolution | null;
@@ -19,6 +20,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          game_code: string;
           player_code: string;
           display_name: string;
           evolution?: Evolution | null;
@@ -29,11 +31,31 @@ export type Database = {
           updated_at?: string | null;
         };
         Update: {
+          game_code?: string;
           evolution?: Evolution | null;
           level?: number;
           xp?: number;
           energy?: number;
           tokens?: number;
+          updated_at?: string | null;
+        };
+        Relationships: [];
+      };
+      game_sessions: {
+        Row: {
+          game_code: string;
+          master_token: string;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          game_code: string;
+          master_token: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          master_token?: string;
           updated_at?: string | null;
         };
         Relationships: [];
@@ -271,11 +293,110 @@ export type Database = {
       admin_recover_player: {
         Args: {
           p_admin_code: string;
+          p_game_code?: string;
+          p_master_token?: string;
           p_player_id: string;
           p_action: string;
           p_reason: string;
           p_token_delta: number;
           p_station_id: string | null;
+        };
+        Returns: Json;
+      };
+      claim_game_master: {
+        Args: {
+          p_game_code: string;
+          p_master_token: string;
+        };
+        Returns: Json;
+      };
+      verify_game_master: {
+        Args: {
+          p_game_code: string;
+          p_master_token: string;
+        };
+        Returns: Json;
+      };
+      delete_player_profile: {
+        Args: {
+          p_game_code: string;
+          p_master_token: string;
+          p_player_id: string;
+        };
+        Returns: Json;
+      };
+      reset_game_session: {
+        Args: {
+          p_game_code: string;
+          p_master_token: string;
+        };
+        Returns: Json;
+      };
+      create_game_after_purchase: {
+        Args: {
+          p_stripe_checkout_session_id: string;
+          p_stripe_payment_intent_id: string | null;
+          p_amount: number;
+          p_currency: string;
+          p_status: string;
+          p_game_code: string;
+          p_join_code: string;
+          p_master_token: string;
+          p_buyer_email?: string | null;
+        };
+        Returns: Json;
+      };
+      get_game_snapshot: {
+        Args: {
+          p_game_code: string;
+        };
+        Returns: Json;
+      };
+      register_player: {
+        Args: {
+          p_game_code: string;
+          p_display_name: string;
+          p_player_code: string;
+          p_session_token: string;
+        };
+        Returns: Json;
+      };
+      set_player_evolution: {
+        Args: {
+          p_player_id: string;
+          p_evolution: string;
+        };
+        Returns: Json;
+      };
+      record_question_shown: {
+        Args: {
+          p_player_id: string;
+          p_station_id: string;
+          p_question_key: string;
+        };
+        Returns: Json;
+      };
+      record_question_answer: {
+        Args: {
+          p_player_id: string;
+          p_question_key: string;
+          p_selected_answer: number;
+          p_is_correct: boolean;
+        };
+        Returns: Json;
+      };
+      create_team_invite: {
+        Args: {
+          p_from_player_id: string;
+          p_to_player_id: string;
+          p_station_id: string | null;
+        };
+        Returns: Json;
+      };
+      respond_team_invite: {
+        Args: {
+          p_invite_id: string;
+          p_status: "accepted" | "declined" | "cancelled";
         };
         Returns: Json;
       };
@@ -287,6 +408,20 @@ export type Database = {
           p_reward_tokens: number;
           p_player_one_capture: Json;
           p_player_two_capture: Json;
+        };
+        Returns: Json;
+      };
+      record_wild_capture: {
+        Args: {
+          p_player_id: string;
+          p_xp: number;
+          p_level: number;
+          p_capture_id: string;
+          p_pokemon_id: number;
+          p_pokemon_name: string;
+          p_rarity: Rarity;
+          p_sprite_id: string;
+          p_token_value: number;
         };
         Returns: Json;
       };
