@@ -3742,6 +3742,12 @@ select:focus-visible {
 .purchase-form-heading small,
 .purchase-form-note { color: var(--game-ink-soft); font-size: 10px; font-weight: 800; line-height: 1.35; }
 
+.promotion-intro { display: grid; gap: 3px; padding-bottom: 9px; border-bottom: 2px dashed #efb843; }
+.promotion-intro > span { color: var(--game-red); font-size: 9px; font-weight: 1000; }
+.promotion-intro b { color: var(--game-ink); font-size: 13px; }
+.promotion-intro code { padding: 2px 5px; background: #fff0bd; color: var(--game-red-dark); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.promotion-intro small { color: var(--game-ink-soft); font-size: 10px; font-weight: 800; }
+
 .purchase-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .purchase-fields label,
 .delivery-setup form { display: grid; gap: 5px; }
@@ -3749,6 +3755,9 @@ select:focus-visible {
 .delivery-setup label { color: var(--game-ink-soft); font-size: 9px; font-weight: 1000; text-transform: uppercase; }
 .purchase-fields input,
 .delivery-setup input { min-width: 0; min-height: 43px; padding: 9px; border: 2px solid var(--game-line); border-radius: 5px; background: #fff; color: var(--game-ink); font: inherit; font-weight: 750; }
+.promotion-field { display: grid; gap: 5px; }
+.promotion-field span { color: var(--game-ink-soft); font-size: 9px; font-weight: 1000; text-transform: uppercase; }
+.promotion-field input { min-width: 0; min-height: 43px; padding: 9px; border: 2px solid var(--game-line); border-radius: 5px; background: #fff; color: var(--game-ink); font: inherit; font-weight: 750; text-transform: uppercase; }
 .purchase-form .checkout-box { width: 100%; }
 .purchase-form .buy-button { width: 100%; min-height: 50px; }
 

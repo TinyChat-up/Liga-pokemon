@@ -60,6 +60,52 @@ async function ensureGameSession(gameCode: string, masterUsername: string, maste
   if (error) throw new Error(error.message);
 }
 
+async function getPromoGameCode(sessionId: string, masterUsername: string, masterPassword: string): Promise<string> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Falta configurar Supabase en el servidor para entregar la partida.");
+  }
+
+  const client = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+  const { data: purchaseData, error: purchaseError } = await client
+    .from("purchases")
+    .select("game_id, amount, status")
+    .eq("stripe_checkout_session_id", sessionId)
+    .maybeSingle();
+  const purchase = purchaseData as { game_id: string; amount: number; status: string } | null;
+
+  if (purchaseError || !purchase || purchase.status !== "promo" || purchase.amount !== 0) {
+    throw new Error("La activación promocional no es válida.");
+  }
+
+  const { data: login, error: loginError } = await client.rpc("login_game_master", {
+    p_master_username: masterUsername,
+    p_master_password: masterPassword,
+  });
+  const loggedGameCode = (login as { gameCode?: unknown } | null)?.gameCode;
+
+  if (loginError || typeof loggedGameCode !== "string") {
+    throw new Error("Las credenciales master no coinciden con esta partida.");
+  }
+
+  const { data: gameData, error: gameError } = await client
+    .from("games")
+    .select("game_code")
+    .eq("id", purchase.game_id)
+    .maybeSingle();
+  const game = gameData as { game_code: string } | null;
+
+  if (gameError || !game || game.game_code !== loggedGameCode) {
+    throw new Error("Las credenciales master no coinciden con esta partida.");
+  }
+
+  return game.game_code;
+}
+
 export async function POST(request: Request) {
   const secretKey = process.env.STRIPE_SECRET_KEY;
   const deliverySecret = process.env.DELIVERY_SECRET;
@@ -73,10 +119,6 @@ export async function POST(request: Request) {
   const masterUsername = typeof body.master_username === "string" ? body.master_username.trim().toLowerCase() : "";
   const masterPassword = typeof body.master_password === "string" ? body.master_password.trim() : "";
 
-  if (!secretKey) {
-    return noStoreJson({ error: "Falta STRIPE_SECRET_KEY en el servidor." }, 503);
-  }
-
   if (!deliverySecret || deliverySecret.length < 32) {
     return noStoreJson({ error: "Falta DELIVERY_SECRET o es demasiado corto." }, 503);
   }
@@ -89,8 +131,8 @@ export async function POST(request: Request) {
     return noStoreJson({ error: "Falta SUPABASE_SECRET_KEY en el servidor." }, 503);
   }
 
-  if (!sessionId.startsWith("cs_")) {
-    return noStoreJson({ error: "Falta una sesión de pago válida." }, 400);
+  if (!sessionId.startsWith("cs_") && !sessionId.startsWith("promo_")) {
+    return noStoreJson({ error: "Falta una sesión de entrega válida." }, 400);
   }
 
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(masterUsername)) {
@@ -101,26 +143,35 @@ export async function POST(request: Request) {
     return noStoreJson({ error: "La contraseña debe tener entre 12 y 80 caracteres." }, 400);
   }
 
-  const stripe = new Stripe(secretKey);
-
   try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    let gameCode: string;
+    if (sessionId.startsWith("promo_")) {
+      gameCode = await getPromoGameCode(sessionId, masterUsername, masterPassword);
+    } else {
+      if (!secretKey) {
+        return noStoreJson({ error: "Falta STRIPE_SECRET_KEY en el servidor." }, 503);
+      }
 
-    if (session.payment_status !== "paid") {
-      return noStoreJson({ error: "El pago todavía no aparece como completado." }, 402);
-    }
+      const stripe = new Stripe(secretKey);
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    if (
-      session.metadata?.product !== PRODUCT.legalName
-      || session.amount_total !== PRODUCT.priceCents
-      || session.currency !== PRODUCT.priceCurrency
-    ) {
-      return noStoreJson({ error: "La sesión no corresponde a una compra válida de QR Quest." }, 403);
+      if (session.payment_status !== "paid") {
+        return noStoreJson({ error: "El pago todavía no aparece como completado." }, 402);
+      }
+
+      if (
+        session.metadata?.product !== PRODUCT.legalName
+        || session.amount_total !== PRODUCT.priceCents
+        || session.currency !== PRODUCT.priceCurrency
+      ) {
+        return noStoreJson({ error: "La sesión no corresponde a una compra válida de QR Quest." }, 403);
+      }
+
+      gameCode = createGameCode(session.id, deliverySecret);
+      await ensureGameSession(gameCode, masterUsername, masterPassword, session);
     }
 
     const origin = getOrigin(request);
-    const gameCode = createGameCode(session.id, deliverySecret);
-    await ensureGameSession(gameCode, masterUsername, masterPassword, session);
     const playerUrl = `${origin}/?game=${encodeURIComponent(gameCode)}&mode=player`;
     const masterUrl = `${origin}/master`;
 

@@ -53,9 +53,10 @@ NEXT_PUBLIC_SITE_URL=http://localhost:3000
 STRIPE_SECRET_KEY=
 SUPABASE_SECRET_KEY=
 DELIVERY_SECRET=
+PROMO_CODE=
 ```
 
-`SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY` y `DELIVERY_SECRET` son solo de
+`SUPABASE_SECRET_KEY`, `STRIPE_SECRET_KEY`, `DELIVERY_SECRET` y `PROMO_CODE` son solo de
 servidor. No los pongas nunca en variables `NEXT_PUBLIC_` ni en codigo que
 llegue al navegador. La antigua `SUPABASE_SERVICE_ROLE_KEY` tambien funciona,
 pero para una configuracion nueva se recomienda la clave Secret de Supabase.
@@ -66,13 +67,18 @@ es la clave que permite reconstruir de forma segura el mismo código interno de
 partida para una compra existente. El usuario y la contraseña master los elige
 el comprador durante la compra.
 
-En Vercel añade las seis variables en Project Settings > Environment Variables
+En Vercel añade las siete variables en Project Settings > Environment Variables
 y aplícalas a Production y Preview. Después crea un nuevo deployment; cambiar
 una variable no modifica deployments que ya estaban construidos.
 
 La `SUPABASE_SECRET_KEY` se obtiene en Supabase desde Project Settings > API
 Keys, creando o copiando una clave de tipo Secret. Debe guardarse únicamente
 como variable sensible de Vercel y nunca con prefijo `NEXT_PUBLIC_`.
+
+Para regalar partidas de prueba, define `PROMO_CODE=QRQUEST-INVITA` en Vercel.
+Quien escriba ese código tras elegir el usuario y contraseña master recibirá una
+partida completa sin pasar por Stripe. Cambia o elimina la variable para dejar
+de aceptar el código.
 
 ## PDF original de la ruta
 
