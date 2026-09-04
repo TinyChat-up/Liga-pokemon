@@ -6,12 +6,11 @@ import { CheckoutButton } from "./CheckoutButton";
 export function PurchaseForm() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [promotionCode, setPromotionCode] = useState("QRQUEST-INVITA");
+  const [promotionCode, setPromotionCode] = useState("");
 
   return (
     <div className="purchase-form" id="crear-partida">
-      <div className="promotion-intro"><span>PRUEBA GRATIS</span><b>Codigo aplicado: <code>QRQUEST-INVITA</code></b><small>Completa tu acceso y crea tu partida sin pagar.</small></div>
-      <label className="promotion-field" htmlFor="purchase-promotion-code"><span>Codigo promocional</span><input id="purchase-promotion-code" value={promotionCode} onChange={(event) => setPromotionCode(event.target.value)} autoCapitalize="characters" autoCorrect="off" maxLength={64} /></label>
+      <label className="promotion-field" htmlFor="purchase-promotion-code"><span>¿Tienes un codigo promocional?</span><input id="purchase-promotion-code" value={promotionCode} onChange={(event) => setPromotionCode(event.target.value)} placeholder="Escribe tu codigo" autoCapitalize="characters" autoCorrect="off" maxLength={64} /><small>Si es válido, tu partida se activa sin pasar por el pago.</small></label>
       <div className="purchase-form-heading"><span>01</span><div><b>Elige tu acceso privado</b><small>Tu decides el usuario y la contrasena de tu partida.</small></div></div>
       <div className="purchase-fields">
         <label htmlFor="purchase-username"><span>Usuario master</span><input id="purchase-username" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="ej. entrenador_ana" autoCapitalize="none" autoCorrect="off" autoComplete="username" maxLength={32} /></label>

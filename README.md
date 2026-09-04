@@ -75,10 +75,10 @@ La `SUPABASE_SECRET_KEY` se obtiene en Supabase desde Project Settings > API
 Keys, creando o copiando una clave de tipo Secret. Debe guardarse únicamente
 como variable sensible de Vercel y nunca con prefijo `NEXT_PUBLIC_`.
 
-El código de prueba `QRQUEST-INVITA` está activo por defecto. Quien lo escriba
-tras elegir el usuario y contraseña master recibirá una partida completa sin
-pasar por Stripe. Para cambiarlo, define `PROMO_CODE=TU-NUEVO-CODIGO` en Vercel.
-Cuando quieras desactivarlo, define `PROMO_CODE=OFF` y vuelve a desplegar.
+Para regalar partidas, define un valor privado en `PROMO_CODE` dentro de Vercel.
+Quien lo reciba y lo escriba tras elegir el usuario y contraseña master recibirá
+una partida completa sin pasar por Stripe. Para desactivarlo, define
+`PROMO_CODE=OFF` y vuelve a desplegar.
 
 ## PDF original de la ruta
 

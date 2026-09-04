@@ -6,8 +6,6 @@ import type { Database } from "@/lib/supabase-types";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const defaultPromotionCode = "QRQUEST-INVITA";
-
 function noStoreJson(body: object, status = 200) {
   return NextResponse.json(body, {
     status,
@@ -16,9 +14,9 @@ function noStoreJson(body: object, status = 200) {
 }
 
 function isValidPromotionCode(value: string): boolean {
-  const configuredCode = (process.env.PROMO_CODE?.trim() || defaultPromotionCode).toUpperCase();
+  const configuredCode = process.env.PROMO_CODE?.trim().toUpperCase();
   const suppliedCode = value.trim().toUpperCase();
-  if (configuredCode === "OFF" || !suppliedCode) return false;
+  if (!configuredCode || configuredCode === "OFF" || !suppliedCode) return false;
 
   const configuredBuffer = Buffer.from(configuredCode);
   const suppliedBuffer = Buffer.from(suppliedCode);
