@@ -29,6 +29,108 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
 }
 
+function drawInstructionsPage(pdf: jsPDF, delivery: Delivery, pageWidth: number, pageHeight: number, playerQr: string) {
+  const ink: [number, number, number] = [23, 34, 59];
+  const blue: [number, number, number] = [47, 128, 237];
+  const red: [number, number, number] = [220, 57, 54];
+  const paper: [number, number, number] = [255, 253, 242];
+
+  pdf.setFillColor(132, 216, 247);
+  pdf.rect(0, 0, pageWidth, 76, "F");
+  pdf.setFillColor(85, 189, 104);
+  pdf.rect(0, 76, pageWidth, pageHeight - 76, "F");
+  pdf.setFillColor(...paper);
+  pdf.roundedRect(10, 12, pageWidth - 20, 53, 4, 4, "F");
+
+  pdf.setTextColor(...ink);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(10);
+  pdf.text("BIENVENIDOS A", pageWidth / 2, 23, { align: "center" });
+  pdf.setFontSize(27);
+  pdf.text(PRODUCT.name.toUpperCase(), pageWidth / 2, 36, { align: "center" });
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(10);
+  pdf.text("Una aventura de retos, capturas y recompensas para jugar en equipo.", pageWidth / 2, 47, { align: "center" });
+  pdf.setFont("helvetica", "bold");
+  pdf.setTextColor(...red);
+  pdf.text("PARTIDA " + delivery.gameCode.toUpperCase(), pageWidth / 2, 58, { align: "center" });
+
+  pdf.setFillColor(...paper);
+  pdf.setDrawColor(...ink);
+  pdf.setLineWidth(0.6);
+  pdf.roundedRect(10, 84, pageWidth - 20, 92, 4, 4, "FD");
+  pdf.setTextColor(...ink);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(15);
+  pdf.text("Como jugar", 18, 97);
+
+  const steps = [
+    ["1", "Entra", "Escanea este QR con tu movil para abrir la partida."],
+    ["2", "Crea tu perfil", "Escribe tu nombre y elige a tu companero de aventura."],
+    ["3", "Sigue la ruta", "Busca los QR numerados y escanealos siempre en orden."],
+    ["4", "Supera el reto", "Responde al desafio para ganar tokens y nuevas capturas."],
+    ["5", "Llega al final", "Completa los 12 QR para desbloquear el Alto Mando."],
+  ];
+
+  steps.forEach(([number, title, description], index) => {
+    const y = 108 + index * 12.5;
+    pdf.setFillColor(...(index === 3 ? red : blue));
+    pdf.circle(23, y - 2.5, 4.5, "F");
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(8);
+    pdf.text(number, 23, y, { align: "center" });
+    pdf.setTextColor(...ink);
+    pdf.setFontSize(9.5);
+    pdf.text(title, 31, y - 1);
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(8);
+    pdf.text(description, 31, y + 3.5, { maxWidth: 101 });
+  });
+
+  pdf.setFillColor(255, 253, 242);
+  pdf.setDrawColor(...ink);
+  pdf.roundedRect(128, 84, 72, 92, 4, 4, "FD");
+  pdf.setTextColor(...ink);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(12);
+  pdf.text("Empieza aqui", 164, 97, { align: "center" });
+  pdf.addImage(playerQr, "PNG", 141, 104, 46, 46);
+  pdf.setFontSize(8.5);
+  pdf.text("Escanea para entrar", 164, 159, { align: "center" });
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(7);
+  pdf.text("No necesitas instalar ninguna app.", 164, 166, { align: "center", maxWidth: 56 });
+
+  pdf.setFillColor(255, 243, 211);
+  pdf.roundedRect(10, 185, pageWidth - 20, 43, 4, 4, "F");
+  pdf.setTextColor(...ink);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(13);
+  pdf.text("Reglas de la ruta", 18, 198);
+  pdf.setFontSize(8.5);
+  pdf.text("- Hay 12 QR obligatorios: 8 entrenadores y 4 misiones Team Rocket.", 18, 207);
+  pdf.text("- Entrenador superado: +2 tokens. Team Rocket superado: +3 tokens.", 18, 214);
+  pdf.text("- Cada QR se completa una sola vez. Si te atascas, pide ayuda al master.", 18, 221);
+
+  pdf.setFillColor(...ink);
+  pdf.roundedRect(10, 238, pageWidth - 20, 43, 4, 4, "F");
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(12);
+  pdf.text("Antes de empezar", 18, 251);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(8.5);
+  pdf.text("1. Comparte esta hoja o el enlace de jugadores.  2. Recorta las tarjetas de las paginas siguientes.", 18, 261);
+  pdf.text("3. Coloca los 12 QR en orden por el espacio del evento.  4. Guarda el acceso master en privado.", 18, 270);
+
+  pdf.setTextColor(...ink);
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(7);
+  pdf.text(`${PRODUCT.name} · Guia de jugadores`, 10, pageHeight - 8);
+  pdf.text("Pagina 1 de 4", pageWidth - 10, pageHeight - 8, { align: "right" });
+}
+
 export function GameDelivery() {
   const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [error, setError] = useState("");
@@ -163,6 +265,14 @@ export function GameDelivery() {
       const startX = (pageWidth - cardWidth * 2 - cardGap) / 2;
       const startY = 20;
       const rowGap = 7;
+      const playerQr = await QRCode.toDataURL(delivery.playerUrl, {
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: 900,
+        color: { dark: "#17223b", light: "#fffdf2" },
+      });
+
+      drawInstructionsPage(pdf, delivery, pageWidth, pageHeight, playerQr);
 
       for (let index = 0; index < delivery.routeQrs.length; index += 1) {
         const qr = delivery.routeQrs[index];
@@ -175,7 +285,7 @@ export function GameDelivery() {
         const isRocket = qr.id.startsWith("rocket");
 
         if (cardIndex === 0) {
-          if (index > 0) pdf.addPage();
+          pdf.addPage();
 
           pdf.setFillColor(246, 250, 244);
           pdf.rect(0, 0, pageWidth, pageHeight, "F");
@@ -185,7 +295,7 @@ export function GameDelivery() {
           pdf.text(`${PRODUCT.name.toUpperCase()} · RUTA`, 10, 10);
           pdf.setFont("helvetica", "normal");
           pdf.setFontSize(7);
-          pdf.text(`Hoja ${pageIndex + 1} de 3 · Recorta por las lineas exteriores`, pageWidth - 10, 10, { align: "right" });
+          pdf.text(`Hoja ${pageIndex + 2} de 4 · Recorta por las lineas exteriores`, pageWidth - 10, 10, { align: "right" });
         }
 
         const dataUrl = await QRCode.toDataURL(qr.url, {
@@ -237,7 +347,7 @@ export function GameDelivery() {
         pdf.text("QR unico de esta partida", x + cardWidth / 2, y + 122, { align: "center" });
       }
 
-      pdf.save(`qr-quest-ruta-${delivery.gameCode}.pdf`);
+      pdf.save(`qr-quest-kit-${delivery.gameCode}.pdf`);
     } finally {
       setDownloading(false);
     }
@@ -298,7 +408,7 @@ export function GameDelivery() {
           Copiar contraseña master
         </button>
         <button type="button" className="buy-button" disabled={downloading} onClick={downloadPdfKit}>
-          {downloading ? "Preparando PDF..." : "Descargar PDF de ruta"}
+          {downloading ? "Preparando PDF..." : "Descargar instrucciones y QR"}
         </button>
         <button type="button" className="store-secondary" disabled={downloading} onClick={downloadQrPack}>
           Descargar PNG ZIP
